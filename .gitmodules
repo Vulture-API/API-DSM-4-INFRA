@@ -1,0 +1,28 @@
+[submodule "services/API-DSM-4-USUARIO"]
+	path = services/API-DSM-4-USUARIO
+	url = https://github.com/Vulture-API/API-DSM-4-USUARIO.git
+	branch = dev
+[submodule "services/API-DSM-4-PARAMETROS"]
+	path = services/API-DSM-4-PARAMETROS
+	url = https://github.com/Vulture-API/API-DSM-4-PARAMETROS.git
+	branch = dev
+[submodule "services/API-DSM-4-ESTACOES"]
+	path = services/API-DSM-4-ESTACOES
+	url = https://github.com/Vulture-API/API-DSM-4-ESTACOES.git
+	branch = dev
+[submodule "services/API-DSM-4-ALERTAS"]
+	path = services/API-DSM-4-ALERTAS
+	url = https://github.com/Vulture-API/API-DSM-4-ALERTAS.git
+	branch = dev
+[submodule "services/API-DSM-4-RECEPCAO-DADOS"]
+	path = services/API-DSM-4-RECEPCAO-DADOS
+	url = https://github.com/Vulture-API/API-DSM-4-RECEPCAO-DADOS.git
+	branch = dev
+[submodule "services/API-DSM-4-BANCO"]
+	path = services/API-DSM-4-BANCO
+	url = https://github.com/Vulture-API/API-DSM-4-BANCO.git
+	branch = dev
+[submodule "services/API-DSM-4-FRONTEND"]
+	path = services/API-DSM-4-FRONTEND
+	url = https://github.com/Vulture-API/API-DSM-4-FRONTEND.git
+	branch = dev

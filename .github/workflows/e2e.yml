@@ -1,0 +1,48 @@
+# Sobe o ambiente inteiro (submodules na branch dev) e roda o teste ponta a
+# ponta. Roda em PR, manualmente e toda manhã — assim, se um merge em qualquer
+# repositório quebrar a integração, aparece aqui no dia seguinte.
+name: E2E
+
+on:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 10 * * 1-5" # 07h em Brasília, dias úteis
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Ambiente completo + E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Atualizar submodules para a ponta da dev
+        run: git submodule update --init --remote
+
+      - name: Versões testadas
+        run: git submodule foreach --quiet 'echo "$name $(git rev-parse --short HEAD)"'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Subir ambiente
+        run: docker compose up -d --build --wait
+
+      - name: Teste ponta a ponta
+        run: node scripts/e2e.mjs
+
+      - name: Logs em caso de falha
+        if: failure()
+        run: docker compose logs --no-color --tail 200
+
+      - name: Derrubar
+        if: always()
+        run: docker compose down -v
