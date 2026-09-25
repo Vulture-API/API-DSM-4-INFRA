@@ -1,6 +1,6 @@
 # API-DSM-4-INFRA
 
-Repositório para subir o AgroClima 360 inteiro na máquina de uma vez: banco, as APIs, a recepção MQTT, o front e um simulador de estações. Também tem o teste ponta a ponta que a gente usa para ver se os serviços continuam conversando entre si.
+Repositório para subir o AgriTech 360 inteiro na máquina de uma vez: banco, as APIs, a recepção MQTT, o front e um simulador de estações. Também tem o teste ponta a ponta que a gente usa para ver se os serviços continuam conversando entre si.
 
 Os serviços não ficam aqui. Cada um continua no seu repositório e entra como submodule na pasta `services/`, sempre na branch `dev`.
 
