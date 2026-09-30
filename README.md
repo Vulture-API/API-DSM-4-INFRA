@@ -72,6 +72,7 @@ Quando o banco é criado pela primeira vez, ele já vem com dados para dar para 
 - 20 regras de alerta e os alertas que elas já teriam disparado
 
 Com tudo no ar, o simulador manda uma leitura por minuto das estações ativas. As estações 05 e 10 ficam Offline de propósito, e a 15 nunca comunicou, para dar para ver os status no front.
+Ele consulta as APIs de estações e sensores a cada ciclo e usa o `local_identifier` cadastrado como chave da medição. Assim também funciona quando o banco usa identificadores diferentes dos do `seed-demo.sql`.
 
 Esses dados são só para ambiente local. Não rodar o `seed-demo.sql` no Neon.
 

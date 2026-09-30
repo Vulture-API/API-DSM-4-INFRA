@@ -273,12 +273,18 @@ services:
     environment:
       MQTT_HOST: mosquitto
       SIMULADOR_INTERVALO_S: 60
+      STATIONS_API_URL: http://api-estacoes:3005
+      PARAMETERS_API_URL: http://api-parametros:3001
 
     volumes:
       - ./scripts:/scripts:ro
 
     depends_on:
       mosquitto:
+        condition: service_healthy
+      api-estacoes:
+        condition: service_healthy
+      api-parametros:
         condition: service_healthy
 
 volumes:
