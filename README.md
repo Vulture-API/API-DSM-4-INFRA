@@ -1,144 +1,135 @@
-# API-DSM-4-INFRA
+# AgriTech — INFRA
 
-Repositório para subir o AgriTech inteiro na máquina de uma vez: banco, as APIs, a recepção MQTT, o front e um simulador de estações. Também tem o teste ponta a ponta que a gente usa para ver se os serviços continuam conversando entre si.
+Executa a plataforma com um backend Node monolítico, frontend separado, recepção Python, MQTT e Redis. O PostgreSQL principal é externo. Para testes, existe um overlay com banco descartável.
 
-Os serviços não ficam aqui. Cada um continua no seu repositório e entra como submodule na pasta `services/`, sempre na branch `dev`.
+Os repositórios ficam em `services/` como submódulos com commits fixados: BACKEND, FRONTEND, RECEPCAO-DADOS e BANCO. Os quatro submódulos Node antigos foram substituídos pelo BACKEND; seus históricos continuam nos repositórios originais.
 
-## 🚀 Rodando tudo junto
+## Executar com banco externo
 
-Precisa de:
-
-- Docker Desktop aberto
-- Git
-- Node 20 ou mais novo (só para o teste ponta a ponta)
-
-No PowerShell:
-
-```powershell
-git clone --recurse-submodules https://github.com/Vulture-API/API-DSM-4-INFRA.git
-cd API-DSM-4-INFRA
-powershell -ExecutionPolicy Bypass -File scripts\testar.ps1
-```
-
-No Linux, Mac ou Git Bash:
+Requisitos: Docker com Compose, Git e Node 24 para scripts/testes.
 
 ```bash
 git clone --recurse-submodules https://github.com/Vulture-API/API-DSM-4-INFRA.git
 cd API-DSM-4-INFRA
-./scripts/testar.sh
+cp .env.example .env
+# Configure DATABASE_URL em .env com o PostgreSQL já provisionado.
+docker compose up -d --build --wait
 ```
 
-O script sobe os containers, espera todo mundo ficar saudável e roda o teste. Se terminar com `TUDO OK`, é só abrir http://localhost:3010.
+Schema e migrations continuam no API-DSM-4-BANCO. O Compose principal não cria PostgreSQL nem aplica seeds/migrations no banco externo.
 
-A primeira vez demora uns minutos porque baixa as imagens e compila tudo. Depois fica rápido.
-
-Se quiser só subir, sem rodar o teste:
-
-```bash
-docker compose up -d --build
-```
-
-## 🧩 O que sobe
-
-| Serviço | Porta | Repositório |
+| Serviço | Porta no host | Responsabilidade |
 | --- | --- | --- |
-| Front | 3010 | API-DSM-4-FRONTEND |
-| Usuários | 3000 | API-DSM-4-USUARIO |
-| Parâmetros e sensores | 3001 | API-DSM-4-PARAMETROS |
-| Alertas (com o motor de regras) | 3002 | API-DSM-4-ALERTAS |
-| Estações | 3005 | API-DSM-4-ESTACOES |
-| Recepção MQTT → Redis | | API-DSM-4-RECEPCAO-DADOS (`ingest`) |
-| Redis → Postgres | | API-DSM-4-RECEPCAO-DADOS (`persist`) |
-| PostgreSQL 16 | 5433 | schema e seeds do API-DSM-4-BANCO |
-| Mosquitto (MQTT) | 1883 | |
-| Redis | só dentro da rede do Docker | |
-| Simulador de estações | | `scripts/simulador.mjs` |
+| `backend` | 3000, somente localhost | Todas as APIs e motor de regras |
+| `frontend` | 3010, somente localhost | Portal Next.js |
+| `nginx` | 8080, somente localhost | Proxy do portal |
+| `mosquitto` | 1883 | Recepção MQTT |
+| `redis` | interna | Stream de telemetria |
+| `recepcao` | — | MQTT → Redis, Python |
+| `recepcao-persist` | — | Redis → PostgreSQL, Python |
+| `simulador` | — | Consulta cadastros e publica MQTT |
 
-O caminho de um dado é esse:
+Acesse o portal em `http://localhost:8080` ou `http://localhost:3010`. A API está em `http://localhost:3000`. `BACKEND_PORT` e `MQTT_PORT` podem ser definidos no `.env`.
 
+Os quatro build args existentes do frontend apontam para `http://backend:3000`. As rotas relativas e os contratos foram preservados; não é necessário alterar seu código. Os destinos são gravados pelo Next.js durante o build, portanto atualizações exigem recompilar o frontend.
+
+## Validar sem usar o banco externo
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.test.yml up -d --build --wait
+FRONTEND_URL=http://localhost:8080 node scripts/e2e.mjs
+# Remove somente o ambiente descartável e seus volumes.
+docker compose -f docker-compose.yml -f docker-compose.test.yml down -v
 ```
-estação → MQTT → recepcao → Redis → recepcao-persist → Postgres → APIs → front
+
+Esse ambiente se chama `vulture-test`, usa PostgreSQL 16 e aplica `schema-neon.sql` e `seed-dev.sql` em um volume próprio. Não usa a `DATABASE_URL` do `.env`. Não execute simultaneamente com o ambiente principal nas mesmas portas; pare o principal antes do teste ou ajuste as portas.
+
+O PostgreSQL de testes é exposto em `127.0.0.1:5433` (`TEST_POSTGRES_PORT`). Para executar as integrações do backend enquanto esse banco está ativo:
+
+```bash
+cd services/API-DSM-4-BACKEND
+npm ci
+TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/agritech_test npm run test:coverage
 ```
 
-O Postgres está na 5433 para não brigar com um Postgres que você já tenha instalado na 5432. Para conectar pelo DBeaver ou pelo psql: `postgresql://postgres:postgres@localhost:5433/vulture`.
+Os testes SQL usam schemas temporários próprios. O seed de desenvolvimento é mínimo: o simulador pode publicar zero leituras até existirem estações e sensores cadastrados; o E2E cria seu próprio cadastro completo e remove os dados ao final.
 
-## 🌱 Dados de demonstração
+### Scripts auxiliares
 
-Quando o banco é criado pela primeira vez, ele já vem com dados para dar para mexer no sistema:
+Linux, macOS e Git Bash:
 
-- 10 usuários (senha de todos: `senha123`) e 6 propriedades
-- 15 estações e 93 sensores
-- 7 dias de leituras, uma a cada 10 minutos
-- 20 regras de alerta e os alertas que elas já teriam disparado
+```bash
+./scripts/testar.sh --test-db --down
+```
 
-Com tudo no ar, o simulador manda uma leitura por minuto das estações ativas. As estações 05 e 10 ficam Offline de propósito, e a 15 nunca comunicou, para dar para ver os status no front.
-Ele consulta as APIs de estações e sensores a cada ciclo e usa o `local_identifier` cadastrado como chave da medição. Assim também funciona quando o banco usa identificadores diferentes dos do `seed-demo.sql`.
-
-Esses dados são só para ambiente local. Não rodar o `seed-demo.sql` no Neon.
-
-## 🛠️ Comandos que a gente mais usa
-
-| Comando | Para quê |
-| --- | --- |
-| `docker compose ps` | ver o que está rodando |
-| `docker compose logs -f api-alertas` | acompanhar o log de um serviço |
-| `docker compose up -d --build frontend` | recompilar só um serviço |
-| `docker compose down` | parar tudo (o banco fica salvo) |
-| `docker compose down -v` | parar tudo e apagar o banco |
-| `node scripts/e2e.mjs` | rodar só o teste ponta a ponta |
-| `git submodule update --remote` | puxar a última versão da `dev` de todos os serviços |
-
-## 🧪 Testando o que você mudou antes de subir
-
-Se você clonou os repositórios um do lado do outro (por exemplo `API4\API-DSM-4-ESTACOES`, `API4\API-DSM-4-INFRA`...), dá para o compose usar essas pastas em vez dos submodules. Assim você testa a sua branch junto com o resto:
+PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\testar.ps1 -Local
+powershell -ExecutionPolicy Bypass -File scripts\testar.ps1 -TestDatabase -Down
 ```
 
-O `-Local` é o mesmo que colocar `SERVICES_DIR=..` no `.env` (tem um exemplo no `.env.example`).
+Sem `--test-db`/`-TestDatabase`, os scripts usam o banco externo configurado. O E2E cria e remove registros; prefira o ambiente descartável. `--local`/`-Local` usa `SERVICES_DIR=..`, exigindo os quatro repositórios em pastas irmãs. `-Unit` também executa as verificações do BACKEND e do frontend.
 
-Outras opções do script:
+## Fluxo de dados
 
-- `-Unit` roda também lint, testes e build de cada repositório, igual ao CI
-- `-Down` derruba tudo e apaga o banco no final
+```mermaid
+flowchart LR
+  Estacao[Estação / datalogger] --> MQTT[Mosquitto]
+  MQTT --> Ingest[Recepção Python]
+  Ingest --> Redis[(Redis Stream)]
+  Redis --> Persist[Persistidor Python]
+  Persist --> PG[(PostgreSQL)]
+  Monolito[Backend Node: usuários, sensores, estações e alertas] --> PG
+  Front[Frontend Next.js] --> Monolito
+  Nginx[Nginx] --> Front
+  Simulador[Simulador] --> MQTT
+  Simulador --> Monolito
+```
 
-## ✅ O que o teste ponta a ponta verifica
-
-O `scripts/e2e.mjs` não precisa instalar nada e apaga tudo o que cria no final. Ele passa pelas histórias da Sprint 1:
-
-- **US03 Usuários:** cria, recusa e-mail repetido, edita, desativa e confere a paginação
-- **US02 Parâmetros e sensores:** cria tipo de sensor, recusa nome repetido, vincula sensor a uma estação
-- **US01 Estações:** lista propriedades, cria estação, normaliza o MAC e recusa MAC repetido
-- **US04 Status:** a estação nasce Offline, recebe uma leitura pelo MQTT e fica Online
-- **US05 Alertas:** cria a regra `temp > 30`, manda uma leitura de 35,5 e confere que o alerta disparou e pode ser reconhecido
-- **Front:** as telas abrem e o proxy `/api/*` chega em cada serviço
-
-São 51 verificações. No final aparece quantas passaram.
-
-## 📡 Formato da mensagem da estação
-
-Tópico `estacoes/<MAC>/dados`:
+Tópico MQTT: `estacoes/<MAC>/dados`.
 
 ```json
-{ "estacao_id": "AA:BB:CC:DD:EE:01", "unix_time": 1760000000, "temp": 23.5, "umid": 61 }
+{"estacao_id":"AA:BB:CC:DD:EE:01","unix_time":1760000000,"temp":23.5,"umid":61}
 ```
 
-- `estacao_id` é o MAC cadastrado na estação
-- cada outro campo numérico é o identificador de um sensor da estação (o `local_identifier`)
-- campo que não bate com nenhum sensor é ignorado, e o log do `recepcao-persist` mostra quantos foram
+`estacao_id` identifica o MAC cadastrado. As chaves de medições usam os `local_identifier` dos sensores. O Python conserva o protocolo existente; o monolito consulta as leituras persistidas e processa as regras de alerta.
 
-## 🤖 CI
+## CI e teste ponta a ponta
 
-O workflow `.github/workflows/e2e.yml` sobe o ambiente com a `dev` de todos os repositórios e roda o teste ponta a ponta. Ele roda em PR, dá para disparar na mão e roda sozinho todo dia útil às 7h. Se algum merge quebrar a integração entre os serviços, aparece aqui.
+O workflow E2E usa exatamente os commits fixados nos gitlinks, sem `git submodule update --remote`. Ele valida o simulador, compila as imagens e executa o ambiente completo com banco descartável. Roda em PR, manualmente e nos dias úteis às 07h de Brasília.
 
-## ⚠️ Problemas comuns
+O E2E verifica cadastros, conflitos, paginação, publicação MQTT, status Online, disparo/reconhecimento de alertas, páginas e proxies do frontend. `BACKEND_URL` configura todas as chamadas de API; `FRONTEND_URL`, `MQTT_HOST`, `MQTT_PORT` e `E2E_TIMEOUT_MS` permanecem disponíveis.
 
-- **Porta ocupada:** confira se não tem outro Postgres, Redis ou Node usando a porta. O Redis não expõe porta de propósito.
-- **Front apontando para o lugar errado:** o front grava os endereços das APIs no build. Mudou algum endereço, rode `docker compose up -d --build frontend`.
-- **Banco com dados antigos:** os seeds só rodam quando o volume é criado. Para começar do zero, `docker compose down -v` e suba de novo.
-- **Mapa sem fundo:** o mapa usa os tiles do OpenStreetMap, então precisa de internet. Sem internet os pinos aparecem mesmo assim.
+A qualidade do BACKEND é validada em seu próprio CI: lint, formatação, tipos, testes SQL, cobertura mínima de 80% de linhas, auditoria crítica e build Docker. Nenhum workflow publica imagens ou faz deploy automático.
 
-## Limites
+## Atualizar e implantar manualmente
 
-Esse ambiente é só para desenvolvimento. O Mosquitto não tem autenticação e o banco usa senha fixa. As migrations 010 a 012 do API-DSM-4-BANCO (particionamento com pg_partman) não rodam aqui porque a imagem do Postgres não tem a extensão.
+Publique primeiro os commits do BACKEND, depois a revisão do INFRA que referencia esses commits. Até essa publicação, os novos gitlinks só podem ser resolvidos nos checkouts locais que possuem os objetos Git.
+
+Na primeira troca de arquitetura, use o checkout antigo para parar as APIs antigas, especialmente `api-alertas`, antes de habilitar o motor do monolito. Pare o Compose antigo sem `-v`, preservando o volume Redis. Em seguida, atualize o INFRA e seus submódulos:
+
+```bash
+git pull --ff-only
+git submodule update --init --recursive
+docker compose up -d --build --remove-orphans --wait
+```
+
+Não use `--remote` no deploy: a revisão do INFRA fixa as versões compatíveis. Confira `docker compose ps`, `/health`, o portal e os logs do backend. O motor fica habilitado no Compose; ele lê o mesmo checkpoint PostgreSQL existente.
+
+### Reversão
+
+Pare o monolito com `docker compose down`, sem `-v`. Restaure a revisão anterior do INFRA, execute `git submodule update --init --recursive` e suba o Compose daquela revisão. Como a migração não altera schema nem protocolo MQTT, o banco e o Redis permanecem compatíveis. Garanta que somente um motor de regras esteja ativo durante a transição.
+
+## Comandos úteis
+
+| Comando | Uso |
+| --- | --- |
+| `docker compose ps` | Estado dos serviços |
+| `docker compose logs -f backend` | API e motor de regras |
+| `docker compose logs -f recepcao-persist` | Persistência da telemetria |
+| `docker compose up -d --build backend frontend --wait` | Recompilar API e rewrites do portal |
+| `docker compose down` | Parar ambiente principal e manter Redis |
+
+O Mosquitto desta configuração é o broker de desenvolvimento sem autenticação. PostgreSQL de testes e API ficam acessíveis somente em localhost. O healthcheck Nginx usa IPv4 explícito, compatível com seu listener. Não aplique as migrations de particionamento no banco externo como parte desta migração.
+
+O inventário, o diagrama detalhado e as evidências estão em `services/API-DSM-4-BACKEND/docs/`. A documentação local para Confluence fica em `confluence/` no checkout principal do BACKEND e está fora do Git; publicação e aprovação do time continuam pendentes.
