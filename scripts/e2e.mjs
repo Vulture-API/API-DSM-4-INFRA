@@ -1,4 +1,4 @@
-// Teste ponta a ponta da Sprint 01, contra o ambiente já no ar.
+// Teste ponta a ponta do monolito, contra o ambiente já no ar.
 //
 //   node scripts/e2e.mjs
 //
@@ -13,11 +13,12 @@
 
 import { mqttPublish } from "./lib/mqtt.mjs";
 
+const BACKEND_URL = (process.env.BACKEND_URL ?? "http://localhost:3000").replace(/\/$/, "");
 const URLS = {
-  usuario: process.env.USUARIO_URL ?? "http://localhost:3000",
-  parametros: process.env.PARAMETROS_URL ?? "http://localhost:3001",
-  alertas: process.env.ALERTAS_URL ?? "http://localhost:3002",
-  estacoes: process.env.ESTACOES_URL ?? "http://localhost:3005",
+  usuario: BACKEND_URL,
+  parametros: BACKEND_URL,
+  alertas: BACKEND_URL,
+  estacoes: BACKEND_URL,
   frontend: process.env.FRONTEND_URL ?? "http://localhost:3010",
 };
 const MQTT_HOST = process.env.MQTT_HOST ?? "localhost";
@@ -81,7 +82,7 @@ async function waitFor(desc, fn) {
 }
 
 async function main() {
-  console.log(`E2E Sprint 01  (sufixo ${id}, MAC ${MAC})`);
+  console.log(`E2E monolito  (sufixo ${id}, MAC ${MAC})`);
 
   secao("Saúde dos serviços");
   const health = {};

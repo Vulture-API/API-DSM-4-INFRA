@@ -1,6 +1,4 @@
-# Sobe o ambiente inteiro (submodules na branch dev) e roda o teste ponta a
-# ponta. Roda em PR, manualmente e toda manhã — assim, se um merge em qualquer
-# repositório quebrar a integração, aparece aqui no dia seguinte.
+# Valida os commits fixados com PostgreSQL descartável, sem acessar o banco externo.
 name: E2E
 
 on:
@@ -9,12 +7,17 @@ on:
   schedule:
     - cron: "0 10 * * 1-5" # 07h em Brasília, dias úteis
 
+permissions:
+  contents: read
+
 concurrency:
   group: e2e-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   e2e:
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.test.yml
     name: Ambiente completo + E2E
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -23,15 +26,17 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Atualizar submodules para a ponta da dev
-        run: git submodule update --init --remote
-
       - name: Versões testadas
         run: git submodule foreach --quiet 'echo "$name $(git rev-parse --short HEAD)"'
 
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+
+      - name: Validar simulador e configuração
+        run: |
+          node --test scripts/simulador.test.mjs
+          docker compose config --quiet
 
       - name: Subir ambiente
         run: docker compose up -d --build --wait

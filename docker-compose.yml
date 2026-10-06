@@ -5,7 +5,7 @@
 #   docker compose down                 para
 #
 # SERVICES_DIR diz de onde vem o código de cada serviço:
-#   ./services  (padrão)  os submodules deste repositório, na branch dev
+#   ./services  (padrão)  os commits fixados dos submodules deste repositório
 #   ..                    as pastas irmãs, ex.: C:\...\API4\API-DSM-4-USUARIO
 #
 # O PostgreSQL é externo/online.
@@ -18,7 +18,7 @@
 
 name: vulture
 
-# Saudável = o servidor HTTP responde (qualquer status < 500).
+# Intervalos compartilhados dos healthchecks HTTP.
 x-node-healthcheck: &node-healthcheck
   interval: 5s
   timeout: 5s
@@ -67,101 +67,24 @@ services:
       timeout: 5s
       retries: 20
 
-  # --------------------------------------------------------------------------
-  # Microsserviços (Node 24 / Fastify)
-  # --------------------------------------------------------------------------
-  api-usuario:
+  # Backend monolítico (Node 24 / Fastify)
+  backend:
     restart: unless-stopped
-    build: ${SERVICES_DIR:-./services}/API-DSM-4-USUARIO
-
+    build: ${SERVICES_DIR:-./services}/API-DSM-4-BACKEND
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: ${DATABASE_URL}
-
-    ports:
-      - "127.0.0.1:3000:3000"
-
-    healthcheck:
-      <<: *node-healthcheck
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://localhost:3000/health').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"
-        ]
-
-  api-parametros:
-    restart: unless-stopped
-    build: ${SERVICES_DIR:-./services}/API-DSM-4-PARAMETROS
-
-    environment:
-      NODE_ENV: production
-      PORT: 3001
-      DATABASE_URL: ${DATABASE_URL}
-
-    ports:
-      - "127.0.0.1:3001:3001"
-
-    healthcheck:
-      <<: *node-healthcheck
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://localhost:3001/health').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"
-        ]
-
-  api-alertas:
-    restart: unless-stopped
-    build: ${SERVICES_DIR:-./services}/API-DSM-4-ALERTAS
-
-    environment:
-      NODE_ENV: production
-      PORT: 3002
-      DATABASE_URL: ${DATABASE_URL}
-
+      DATABASE_URL: ${DATABASE_URL:-}
+      STATION_OFFLINE_THRESHOLD_MINUTES: 10
       RULES_ENGINE_ENABLED: "true"
       RULES_ENGINE_INTERVAL_MS: 5000
       RULES_ENGINE_BATCH_SIZE: 500
-
     ports:
-      - "127.0.0.1:3002:3002"
-
+      - "127.0.0.1:${BACKEND_PORT:-3000}:3000"
     healthcheck:
       <<: *node-healthcheck
       test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://localhost:3002/health').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"
-        ]
-
-  api-estacoes:
-    restart: unless-stopped
-    build: ${SERVICES_DIR:-./services}/API-DSM-4-ESTACOES
-
-    environment:
-      NODE_ENV: production
-      PORT: 3005
-      DATABASE_URL: ${DATABASE_URL}
-      STATION_OFFLINE_THRESHOLD_MINUTES: 10
-
-    ports:
-      - "127.0.0.1:3005:3005"
-
-    healthcheck:
-      <<: *node-healthcheck
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://localhost:3005/health').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"
-        ]
+        ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"]
 
   # --------------------------------------------------------------------------
   # Recepção de dados (Python): MQTT -> Redis Stream -> PostgreSQL online
@@ -190,7 +113,7 @@ services:
 
     environment:
       INGEST_REDIS_URL: redis://redis:6379/0
-      INGEST_DATABASE_URL: ${DATABASE_URL}
+      INGEST_DATABASE_URL: ${DATABASE_URL:-}
       INGEST_LOG_LEVEL: INFO
 
     depends_on:
@@ -209,10 +132,10 @@ services:
       context: ${SERVICES_DIR:-./services}/API-DSM-4-FRONTEND/app
 
       args:
-        USERS_API_URL: http://api-usuario:3000
-        PARAMETERS_API_URL: http://api-parametros:3001
-        ALERTS_API_URL: http://api-alertas:3002
-        STATIONS_API_URL: http://api-estacoes:3005
+        USERS_API_URL: http://backend:3000
+        PARAMETERS_API_URL: http://backend:3000
+        ALERTS_API_URL: http://backend:3000
+        STATIONS_API_URL: http://backend:3000
 
     ports:
       - "127.0.0.1:3010:3010"
@@ -228,13 +151,7 @@ services:
         ]
 
     depends_on:
-      api-usuario:
-        condition: service_healthy
-      api-parametros:
-        condition: service_healthy
-      api-alertas:
-        condition: service_healthy
-      api-estacoes:
+      backend:
         condition: service_healthy
 
   # --------------------------------------------------------------------------
@@ -273,8 +190,8 @@ services:
     environment:
       MQTT_HOST: mosquitto
       SIMULADOR_INTERVALO_S: 60
-      STATIONS_API_URL: http://api-estacoes:3005
-      PARAMETERS_API_URL: http://api-parametros:3001
+      STATIONS_API_URL: http://backend:3000
+      PARAMETERS_API_URL: http://backend:3000
 
     volumes:
       - ./scripts:/scripts:ro
@@ -282,9 +199,7 @@ services:
     depends_on:
       mosquitto:
         condition: service_healthy
-      api-estacoes:
-        condition: service_healthy
-      api-parametros:
+      backend:
         condition: service_healthy
 
 volumes:

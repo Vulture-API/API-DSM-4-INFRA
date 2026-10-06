@@ -1,12 +1,13 @@
 ﻿# Sobe o ambiente completo e roda o teste ponta a ponta.
 #
-#   powershell -ExecutionPolicy Bypass -File scripts\testar.ps1            # submodules (branch dev)
+#   powershell -ExecutionPolicy Bypass -File scripts\testar.ps1            # commits fixados dos submodules
 #   powershell -ExecutionPolicy Bypass -File scripts\testar.ps1 -Local     # pastas irmãs (..\API-DSM-4-*)
 #   powershell -ExecutionPolicy Bypass -File scripts\testar.ps1 -Unit      # + lint/testes/build de cada repo
 #   powershell -ExecutionPolicy Bypass -File scripts\testar.ps1 -Down      # derruba e apaga o banco no fim
 #
+#   Adicione -TestDatabase para usar PostgreSQL descartável.
 # Requer Docker Desktop aberto e Node 20+ (só para o e2e.mjs e o -Unit).
-param([switch]$Local, [switch]$Unit, [switch]$Down)
+param([switch]$Local, [switch]$Unit, [switch]$Down, [switch]$TestDatabase)
 
 $ErrorActionPreference = "Stop"
 $raiz = Split-Path $PSScriptRoot -Parent
@@ -17,12 +18,12 @@ $servicos = if ($env:SERVICES_DIR) { Join-Path $raiz $env:SERVICES_DIR } else { 
 $servicos = (Resolve-Path $servicos).Path
 Write-Host "Código dos serviços: $servicos" -ForegroundColor Cyan
 
-$repos = "API-DSM-4-USUARIO", "API-DSM-4-PARAMETROS", "API-DSM-4-ESTACOES", "API-DSM-4-ALERTAS",
+$repos = "API-DSM-4-BACKEND",
          "API-DSM-4-RECEPCAO-DADOS", "API-DSM-4-BANCO", "API-DSM-4-FRONTEND"
 foreach ($r in $repos) {
   if (-not (Test-Path (Join-Path $servicos $r))) {
     Write-Host "Falta $r em $servicos." -ForegroundColor Red
-    if (-not $Local) { Write-Host "Rode: git submodule update --init --remote" }
+    if (-not $Local) { Write-Host "Rode: git submodule update --init --recursive" }
     exit 1
   }
 }
@@ -30,6 +31,8 @@ foreach ($r in $repos) {
 docker info *> $null
 if ($LASTEXITCODE -ne 0) { Write-Host "Docker não está rodando. Abra o Docker Desktop." -ForegroundColor Red; exit 1 }
 
+$composeArgs = @("-f", "docker-compose.yml")
+if ($TestDatabase) { $composeArgs += @("-f", "docker-compose.test.yml") }
 $falhas = 0
 function Rodar($titulo, $comando) {
   $saida = cmd /c "$comando 2>&1"
@@ -44,7 +47,7 @@ function Rodar($titulo, $comando) {
 
 if ($Unit) {
   Write-Host "`nTestes de cada repositório (como no CI)" -ForegroundColor Cyan
-  foreach ($r in "API-DSM-4-USUARIO", "API-DSM-4-PARAMETROS", "API-DSM-4-ESTACOES", "API-DSM-4-ALERTAS") {
+  foreach ($r in "API-DSM-4-BACKEND") {
     Write-Host $r
     Push-Location (Join-Path $servicos $r)
     if (-not (Test-Path node_modules)) { Rodar "npm ci" "npm ci --no-audit --no-fund" | Out-Null }
@@ -59,19 +62,19 @@ if ($Unit) {
 }
 
 Write-Host "`nSubindo o ambiente (primeira vez demora: baixa imagens e compila)" -ForegroundColor Cyan
-docker compose up -d --build --wait
+docker compose @composeArgs up -d --build --wait
 if ($LASTEXITCODE -ne 0) {
-  docker compose ps
+  docker compose @composeArgs ps
   Write-Host "Falha ao subir. Logs: docker compose logs <servico>" -ForegroundColor Red
   exit 1
 }
-docker compose ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}"
+docker compose @composeArgs ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}"
 
 Write-Host "`nTeste ponta a ponta" -ForegroundColor Cyan
 node scripts/e2e.mjs
 if ($LASTEXITCODE -ne 0) { $falhas++ }
 
-if ($Down) { docker compose down -v }
+if ($Down) { docker compose @composeArgs down -v }
 
 Write-Host ""
 if ($falhas -eq 0) {

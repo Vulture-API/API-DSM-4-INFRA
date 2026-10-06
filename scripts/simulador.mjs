@@ -7,8 +7,9 @@ import { mqttPublish } from "./lib/mqtt.mjs";
 const HOST = process.env.MQTT_HOST ?? "localhost";
 const PORT = Number(process.env.MQTT_PORT ?? 1883);
 const INTERVAL_S = Number(process.env.SIMULADOR_INTERVALO_S ?? 60);
-const STATIONS_API_URL = process.env.STATIONS_API_URL ?? "http://localhost:3005";
-const PARAMETERS_API_URL = process.env.PARAMETERS_API_URL ?? "http://localhost:3001";
+const BACKEND_URL = (process.env.BACKEND_URL ?? "http://localhost:3000").replace(/\/$/, "");
+const STATIONS_API_URL = process.env.STATIONS_API_URL ?? BACKEND_URL;
+const PARAMETERS_API_URL = process.env.PARAMETERS_API_URL ?? BACKEND_URL;
 
 const ESTACOES = [1, 2, 3, 4, 6, 7, 8, 9, 11, 12, 13, 14];
 
