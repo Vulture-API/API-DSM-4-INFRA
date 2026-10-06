@@ -6,7 +6,7 @@
 #
 # SERVICES_DIR diz de onde vem o código de cada serviço:
 #   ./services  (padrão)  os commits fixados dos submodules deste repositório
-#   ..                    as pastas irmãs, ex.: C:\...\API4\API-DSM-4-USUARIO
+#   ..                    as pastas irmãs, ex.: C:\...\API4\API-DSM-4-BACKEND
 #
 # O PostgreSQL é externo/online.
 # Configure DATABASE_URL no arquivo .env.
@@ -172,7 +172,7 @@ services:
         condition: service_healthy
 
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost/dashboard || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/dashboard || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 20
