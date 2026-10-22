@@ -31,7 +31,7 @@ services:
   # --------------------------------------------------------------------------
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
 
     volumes:
       - redis_data:/data
@@ -46,7 +46,7 @@ services:
     image: eclipse-mosquitto:2
 
     ports:
-      - "${MQTT_PORT:-1883}:1883"
+      - "127.0.0.1:${MQTT_PORT:-1883}:1883"
 
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
@@ -87,7 +87,7 @@ services:
         ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"]
 
   # --------------------------------------------------------------------------
-  # Recepção de dados (Python): MQTT -> Redis Stream -> PostgreSQL online
+  # Recepção (MQTT -> Redis) e tratamento independente (Redis -> PostgreSQL)
   # --------------------------------------------------------------------------
   recepcao:
     build: ${SERVICES_DIR:-./services}/API-DSM-4-RECEPCAO-DADOS
@@ -97,6 +97,14 @@ services:
       INGEST_MQTT_HOST: mosquitto
       INGEST_MQTT_CLIENT_ID: station-ingest-local
       INGEST_REDIS_URL: redis://redis:6379/0
+      INGEST_REDIS_STREAM: ${TELEMETRY_STREAM:-telemetry:ingest}
+      INGEST_RETENTION_ENABLED: ${INGEST_RETENTION_ENABLED:-false}
+      INGEST_RETENTION_DAYS: ${INGEST_RETENTION_DAYS:-7}
+      INGEST_RETENTION_INTERVAL_SECONDS: ${INGEST_RETENTION_INTERVAL_SECONDS:-60}
+      INGEST_RETENTION_REQUIRED_GROUPS: '${INGEST_RETENTION_REQUIRED_GROUPS:-["postgres-persister"]}'
+      INGEST_RETENTION_TRIM_LIMIT: ${INGEST_RETENTION_TRIM_LIMIT:-10000}
+      INGEST_RETENTION_MAX_GROUPS: ${INGEST_RETENTION_MAX_GROUPS:-128}
+      INGEST_SHUTDOWN_TIMEOUT_SECONDS: ${INGEST_SHUTDOWN_TIMEOUT_SECONDS:-30}
       INGEST_LOG_LEVEL: INFO
 
     depends_on:
@@ -105,21 +113,41 @@ services:
       redis:
         condition: service_healthy
 
+    stop_grace_period: ${INGEST_STOP_GRACE_PERIOD:-45s}
     restart: unless-stopped
 
-  recepcao-persist:
-    build: ${SERVICES_DIR:-./services}/API-DSM-4-RECEPCAO-DADOS
-    command: ["persist"]
-
+  persistencia:
+    build: ${SERVICES_DIR:-./services}/API-DSM-4-PERSISTENCIA-DADOS
+    command: ["consume"]
     environment:
-      INGEST_REDIS_URL: redis://redis:6379/0
-      INGEST_DATABASE_URL: ${DATABASE_URL:-}
-      INGEST_LOG_LEVEL: INFO
-
+      PERSIST_REDIS_URL: ${PERSIST_REDIS_URL:-redis://redis:6379/0}
+      PERSIST_DATABASE_URL: ${DATABASE_URL:-}
+      PERSIST_SOURCE_ID: ${PERSIST_SOURCE_ID:?Configure uma identidade estavel para esta origem Redis}
+      PERSIST_STREAM: ${TELEMETRY_STREAM:-telemetry:ingest}
+      PERSIST_GROUP: ${PERSIST_GROUP:-postgres-persister}
+      # Consumer omitted: hostname/PID gives distinct identities to replicas.
+      PERSIST_LEGACY_MAX_ID: ${PERSIST_LEGACY_MAX_ID:-}
+      PERSIST_BATCH_SIZE: ${PERSIST_BATCH_SIZE:-500}
+      PERSIST_BLOCK_MS: ${PERSIST_BLOCK_MS:-1000}
+      PERSIST_SHUTDOWN_TIMEOUT_SECONDS: ${PERSIST_SHUTDOWN_TIMEOUT_SECONDS:-10}
+      PERSIST_RECOVERY_INTERVAL_SECONDS: ${PERSIST_RECOVERY_INTERVAL_SECONDS:-10}
+      PERSIST_RECOVERY_MIN_IDLE_MS: ${PERSIST_RECOVERY_MIN_IDLE_MS:-120000}
+      PERSIST_RECOVERY_BATCH_SIZE: ${PERSIST_RECOVERY_BATCH_SIZE:-100}
+      PERSIST_LEASE_REFRESH_SECONDS: ${PERSIST_LEASE_REFRESH_SECONDS:-10}
+      PERSIST_LEASE_TTL_SECONDS: ${PERSIST_LEASE_TTL_SECONDS:-60}
+      PERSIST_PROCESSING_TIMEOUT_SECONDS: ${PERSIST_PROCESSING_TIMEOUT_SECONDS:-30}
+      PERSIST_METRICS_INTERVAL_SECONDS: ${PERSIST_METRICS_INTERVAL_SECONDS:-30}
+      PERSIST_LOG_LEVEL: INFO
     depends_on:
       redis:
         condition: service_healthy
-
+    healthcheck:
+      test: ["CMD", "python", "-m", "station_persist", "status"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    stop_grace_period: ${PERSIST_STOP_GRACE_PERIOD:-45s}
     restart: unless-stopped
 
   # --------------------------------------------------------------------------
@@ -138,7 +166,7 @@ services:
         STATIONS_API_URL: http://backend:3000
 
     ports:
-      - "127.0.0.1:3010:3010"
+      - "127.0.0.1:${FRONTEND_PORT:-3010}:3010"
 
     healthcheck:
       <<: *node-healthcheck
@@ -162,7 +190,7 @@ services:
     restart: unless-stopped
 
     ports:
-      - "127.0.0.1:8080:80"
+      - "127.0.0.1:${PROXY_PORT:-8080}:80"
 
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
@@ -182,6 +210,7 @@ services:
   # Simulador das estações de demonstração
   # --------------------------------------------------------------------------
   simulador:
+    profiles: [demo]
     image: node:24-alpine
     restart: unless-stopped
 
