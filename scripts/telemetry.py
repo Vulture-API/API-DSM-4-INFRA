@@ -107,16 +107,17 @@ from redis.asyncio import Redis
 from station_persist.config import Settings
 from station_persist.persistence import validate_storage_schema
 async def main():
- s=Settings(); assert s.source_id, 'PERSIST_SOURCE_ID required'
+ s=Settings()
+ if not s.source_id: raise ValueError('PERSIST_SOURCE_ID required')
  r=Redis.from_url(s.redis_url.get_secret_value(),decode_responses=True)
  c=await asyncpg.connect(s.database_url.get_secret_value(),timeout=10)
  try:
   async with c.transaction(readonly=True): await validate_storage_schema(c)
-  assert await r.ping()
+  if not await r.ping(): raise RuntimeError('Redis PING failed')
   names=await r.exists(s.stream)
   groups=await r.xinfo_groups(s.stream) if names else []
   bound=await r.get('vulture:source:'+s.stream+':'+s.group)
-  assert bound in (None,s.source_id), 'Redis history belongs to another SOURCE_ID'
+  if bound not in (None,s.source_id): raise ValueError('Redis history belongs to another SOURCE_ID')
   pel=await r.xpending_range(s.stream,s.group,'-','+',1000) if any(g['name']==s.group for g in groups) else []
   print(json.dumps(dict(stream=s.stream,group=s.group,source_id=s.source_id,groups=groups,pending_sample=pel,pending_sample_limit=1000,redis_time=await r.time())))
  finally: await c.close(); await r.aclose()
@@ -148,6 +149,15 @@ asyncio.run(main())"""
             )
         if receiver["INGEST_REDIS_STREAM"] != worker["PERSIST_STREAM"]:
             raise RuntimeError("Reception and treatment Streams differ")
+        running = {
+            i["Config"]["Labels"].get("com.docker.compose.service")
+            for i in self.containers()
+            if i["State"]["Running"]
+        }
+        if not {"mosquitto", "redis", "recepcao"}.issubset(running):
+            raise RuntimeError(
+                "MQTT, Redis and reception must be running before cutover"
+            )
         snapshot = self.probe()
         # Inventory excludes Env: it may contain credentials.
         snapshot["infra_revision"] = run(["git", "rev-parse", "HEAD"], cwd=ROOT)
@@ -193,7 +203,7 @@ async def main():
  try:
   key='vulture:source:'+s.stream+':'+s.group
   await r.set(key,s.source_id,nx=True)
-  assert await r.get(key)==s.source_id, 'SOURCE_ID mismatch'
+  if await r.get(key)!=s.source_id: raise ValueError('SOURCE_ID mismatch')
  finally: await r.aclose()
 asyncio.run(main())"""
         self.compose(
