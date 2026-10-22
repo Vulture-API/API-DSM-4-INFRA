@@ -51,6 +51,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Checkout do legado congelado para ensaio
+        run: git -C services/API-DSM-4-RECEPCAO-DADOS fetch --no-tags --depth=1 origin 4d83b0382b838e0a6f63c37edd365e6d761b2ca1
       - name: QA da telemetria
         run: |
           python -m pip install -r qa/requirements.txt

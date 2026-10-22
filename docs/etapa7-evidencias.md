@@ -9,7 +9,7 @@ Execução: 22/10/2026. Responsável pela execução: conta pessoal do solicitan
 Tarefas: [SCRUM-531](https://vultureapi.atlassian.net/browse/SCRUM-531) e
 [SCRUM-453](https://vultureapi.atlassian.net/browse/SCRUM-453).
 PR de integração: https://github.com/Vulture-API/API-DSM-4-INFRA/pull/1 (base cloudflare).
-PR de QA: encadeado na branch SCRUM-531; atualizar o link após sua criação.
+PR de QA: https://github.com/Vulture-API/API-DSM-4-INFRA/pull/2 (encadeado na SCRUM-531).
 A referência [Processo de QA](https://vultureapi.atlassian.net/wiki/spaces/V/pages/30605317)
 está como proposta em revisão. Aprovação do CI não substitui aceite funcional.
 
@@ -60,7 +60,7 @@ inicialização completa. Nenhuma migration foi aplicada em banco externo.
 | Retenção protege todos os grupos | `test_retention_protects_old_pending_and_all_groups` | 250 eventos antigos; grupo atrasado/pendente/ausente | Aprovado no ensaio |
 | Inspeções não escrevem nem criam grupos | `test_inspection_modes_do_not_write_or_create_groups` | CLI inspect/resolve/validate + SQL/Redis | Aprovado no ensaio |
 | Transição, pausa e retorno legado controlado | `test_cutover_pause_and_controlled_legacy_return_preserve_history` | Volume/grupo/Stream mantidos, nenhum escritor simultâneo | Aprovado no ensaio |
-| Imagens independentes e não root | `test_production_images_non_root_and_separate_configuration` | UID e configuração Compose | Conferir execução final/CI |
+| Imagens independentes e não root | `test_production_images_non_root_and_separate_configuration` | UID e configuração Compose | Aprovado no ensaio |
 | Regressão de produto | `scripts/e2e.mjs` | 51 verificações aprovadas | Aprovado no ensaio |
 | Suítes fixadas e cobertura por componente | `scripts/check-components.py` | JUnit/cobertura/pacotes + TAP Banco | Aprovado no ensaio |
 
@@ -78,7 +78,7 @@ explícito e exclusivo da história. Executar E2E antes das fixtures de extremos
 O workflow E2E mantém o check **Ambiente completo + E2E**, PR/manual e agenda
 07h Brasília em dias úteis, e publica os relatórios e logs sanitizados.
 
-`reports/telemetry.xml`: cenários integrados, sem skips. `reports/scenarios/`:
+`reports/telemetry.xml`: 39 cenários integrados aprovados, sem skips. `reports/scenarios/`:
 logs por cenário. `reports/transitions/`: inventário salvo antes de parar escritores,
 mesmo quando uma ativação posterior falha. `reports/components/`: JUnit, cobertura,
 pacotes e TAP Banco. `reports/inventory.json`, gitlinks e versions: reprodução.
@@ -124,3 +124,22 @@ float8/JavaScript e podem falhar em NUMERIC extremo. Não houve mudança HTTP.
 - Scripts PowerShell foram atualizados; execução automatizada é Linux.
 - Sem deploy, migrations externas ou merge. SCRUM-532 aguarda validação do time
 antes de retirar o pacote/dependências PostgreSQL da recepção.
+
+
+## Publicação externa e acompanhamento
+
+O PR #1 passou no CI do commit 3bdeb9b3350fd0ecddb13295a9945233faeda59c:
+https://github.com/Vulture-API/API-DSM-4-INFRA/actions/runs/39786278504.
+O PR #2 executa a suíte ampliada e publica JUnit/artefatos em seu check E2E.
+A publicação no Confluence e o encaminhamento das duas tarefas Jira para Em análise
+ficam pendentes enquanto o site/conector Atlassian estiver indisponível. As consultas
+iniciais preservadas identificam responsável pessoal, prioridade Medium e Sprint 39;
+reler os itens antes de qualquer atualização e não alterar esses campos/vínculos.
+O índice original do INFRA manteve o mesmo hash binário antes/depois da implementação.
+
+
+A primeira execução ampliada (39786688503) teve 38 cenários aprovados e uma falha
+no ensaio legado: o checkout raso do Actions não continha o SHA antigo para
+`git archive`. O workflow passou a buscar explicitamente esse SHA congelado,
+sem mover o checkout/gitlinks e sem `submodule update --remote`. Reexecutar todos
+os critérios; não foi introduzido skip. Suítes dos componentes passaram nessa execução.
