@@ -1,0 +1,30 @@
+# Independent disposable services: component tests may flush Redis/create schemas.
+services:
+  postgres:
+    build:
+      context: ../services/API-DSM-4-BANCO/benchmark
+      dockerfile: Dockerfile.postgres
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - ../services/API-DSM-4-BANCO:/contract:ro
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U postgres']
+      interval: 2s
+      timeout: 2s
+      retries: 60
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  mosquitto:
+    image: eclipse-mosquitto:2
+    command: [mosquitto, -c, /mosquitto-no-auth.conf]
+    healthcheck:
+      test: [CMD, mosquitto_pub, -h, localhost, -t, health, -m, ok]
+      interval: 2s
+      timeout: 2s
+      retries: 30

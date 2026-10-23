@@ -101,3 +101,50 @@ controle todos os publicadores. Só então inclua `docker-compose.legacy.yml` e 
 compatíveis; pare o legado antes de ativar o novo. Conserve os mesmos volumes/grupo.
 Esse ensaio não promete validação, precisão, quarentena, replay ou idempotência
 equivalentes no legado e não autoriza seu retorno irrestrito em ambiente real.
+
+
+## SCRUM-453 — QA integrada
+
+A suíte `qa/` publica MQTT QoS 1 e observa Redis/PostgreSQL/CLI/API. Não importa
+implementações de validação nem acrescenta opções de teste aos serviços.
+Cada cenário usa Stream e cadastro exclusivos no projeto Docker descartável.
+Falhas são reproduzidas com indisponibilidade local, lock PostgreSQL + SIGKILL,
+ACL Redis que impede XACK e trigger temporária na quarentena. Triggers/usuários
+são removidos ao final; o cenário de conteúdo ausente corrompe deliberadamente
+uma entrada de teste e exige incidente durável/PEL preservada, sem ACK manual.
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r qa/requirements.txt
+# Suba primeiro o overlay descartável, com COMPOSE_PROJECT_NAME=vulture-qa-<id>,
+# PERSIST_SOURCE_ID=<identidade da história> e DATABASE_URL vazia.
+# Se mudar portas, exporte MQTT_PORT, TEST_REDIS_PORT e TEST_POSTGRES_PORT para pytest.
+.venv/bin/pytest qa --junitxml=reports/telemetry.xml
+.venv/bin/python scripts/require-results.py
+python3 scripts/check-components.py
+python3 scripts/evidence.py  # antes de down -v, somente projeto vulture-qa-*
+```
+
+Os cenários interrompem os serviços do projeto QA e deixam recepção/tratamento
+principais parados; não use esse projeto como ambiente de desenvolvimento compartilhado.
+O ambiente descartável deve ser novo para o E2E de regressão: rode `node scripts/e2e.mjs`
+antes da suíte de falhas. A fixture NUMERIC extremo permanece no banco para evidência;
+as APIs/motor existentes convertem para float8 e podem falhar com esse valor.
+Precisão extrema é conferida em SQL. Não há mudança do contrato HTTP nesta etapa.
+Séries de dados válidos excluem inconsistentes; o snapshot/overview atual tem outra
+semântica e não se declara que todas as consultas filtram inconsistentes.
+
+O check **Ambiente completo + E2E** preserva a regressão do produto e executa a QA
+ampliada. Um segundo job executa os testes dos gitlinks de recepção e tratamento
+com lint, pacote e cobertura >=80% por componente, e os testes do BANCO, benchmark
+com 100 mil leituras, particionamento e reaplicação das migrations 016/017/018.
+Integrações não podem passar com skips. Os runners de verificação incluem os testes,
+sem herdar sua exclusão do `.dockerignore` de produção. As imagens de produção
+continuam usando os Dockerfiles originais sem root.
+
+JUnit, cobertura, pacotes, logs por cenário, inventário de imagens/volumes e SHAs
+ficam em `reports/` (fora do Git) e nos artefatos do Actions. Os scripts de Bash e
+PowerShell são auxiliares; o ensaio automatizado executado em CI é Linux.
+A referência de QA no Confluence é proposta em revisão; CI não representa aceite
+funcional do PO. Evidências finais e limitações devem ser revisadas pelo time antes
+que a SCRUM-532 remova o persistidor legado.
