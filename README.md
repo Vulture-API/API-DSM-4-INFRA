@@ -30,8 +30,8 @@ Estações → MQTT QoS 1 → `recepcao` (Python, MQTT/Redis) → `telemetry:ing
 → `persistencia` (Python, Redis/PostgreSQL) → leituras/ocorrências/quarentena.
 O BACKEND mantém APIs, cadastros e consultas. O tratamento tem imagem própria,
 comando `consume`, healthcheck `python -m station_persist status` e usuário sem root.
-Não há endpoint HTTP nos serviços Python. O código legado permanece na recepção
-até SCRUM-532, mas `recepcao-persist` saiu do Compose principal.
+Não há endpoint HTTP nos serviços Python. Desde a SCRUM-532, a recepção contém
+somente MQTT → Redis, sem cliente PostgreSQL ou modo `persist`. O consumo é executado exclusivamente pelo tratamento.
 
 Os submódulos são fixados em commits. BACKEND/FRONTEND continuam nas revisões da
 base `cloudflare`; atualizações locais preparadas desses serviços não fazem parte
@@ -91,17 +91,20 @@ Não reinicia automaticamente o legado depois de ACKs do novo serviço. Não use
 manual, reset de grupo, exclusão de pendências ou limpeza do Stream para resolver erros.
 `docker compose down` para sem apagar volumes; `down -v` é restrito ao QA descartável.
 
-### Retorno controlado ao legado (somente ensaio)
+### Retirada do persistidor antigo (SCRUM-532)
 
-Congele a imagem antiga com `telemetry.py build-legacy --test --project vulture-qa-...`
-e `--evidence reports/legacy.json`. O SHA é 4d83b0382b838e0a6f63c37edd365e6d761b2ca1.
-Pause o novo, confirme zero escritores e grupo drenado (lag e pendências zero), e
-controle todos os publicadores. Só então inclua `docker-compose.legacy.yml` e perfil
-`legacy-rehearsal`, iniciando **apenas** recepcao-persist. Publique dados conhecidos e
-compatíveis; pare o legado antes de ativar o novo. Conserve os mesmos volumes/grupo.
-Esse ensaio não promete validação, precisão, quarentena, replay ou idempotência
-equivalentes no legado e não autoriza seu retorno irrestrito em ambiente real.
+O overlay, a construção da imagem congelada e o ensaio de retorno ao legado foram
+removidos. `telemetry.py` oferece somente `preflight`, `activate` e `pause`.
+A pausa mantém MQTT → Redis e preserva o backlog e as pendências. A retomada ativa
+o tratamento independente com a mesma identidade de origem e grupo. Não há retorno
+automático ou comando de construção do persistidor removido.
 
+[Resultados da SCRUM-532](docs/etapa8-evidencias.md): revisões, testes e limites.
+
+A detecção de containers antigos órfãos continua protegendo a transição contra
+escritores simultâneos. Nenhum procedimento apaga volumes ou altera a posição do
+grupo para contornar falhas. Compatibilidade de eventos legados e o corte explícito
+`PERSIST_LEGACY_MAX_ID` continuam no tratamento.
 
 ## SCRUM-453 — QA integrada
 
@@ -146,5 +149,6 @@ JUnit, cobertura, pacotes, logs por cenário, inventário de imagens/volumes e S
 ficam em `reports/` (fora do Git) e nos artefatos do Actions. Os scripts de Bash e
 PowerShell são auxiliares; o ensaio automatizado executado em CI é Linux.
 A referência de QA no Confluence é proposta em revisão; CI não representa aceite
-funcional do PO. Evidências finais e limitações devem ser revisadas pelo time antes
-que a SCRUM-532 remova o persistidor legado.
+funcional do PO. A SCRUM-531 e a SCRUM-453 foram concluídas pelo time. A SCRUM-532 retira o
+persistidor antigo e valida novamente a separação dos serviços; seu aceite permanece
+com o time. Resultados históricos da etapa 7 estão preservados na documentação.

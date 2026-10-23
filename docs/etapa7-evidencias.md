@@ -143,3 +143,17 @@ no ensaio legado: o checkout raso do Actions não continha o SHA antigo para
 `git archive`. O workflow passou a buscar explicitamente esse SHA congelado,
 sem mover o checkout/gitlinks e sem `submodule update --remote`. Reexecutar todos
 os critérios; não foi introduzido skip. Suítes dos componentes passaram nessa execução.
+
+
+## Atualização SCRUM-532 — retirada do ensaio legado
+
+Os resultados acima são históricos da etapa 7. Após conclusão da SCRUM-531 e da
+SCRUM-453, a SCRUM-532 remove o persistidor do pacote/imagem atuais da recepção e
+retira o overlay, build-legacy e fetch da revisão congelada. O ensaio histórico de
+retorno deixa de integrar a suíte corrente; suas evidências não são reclassificadas.
+
+A regressão corrente exercita ativação, pausa e retomada do tratamento independente,
+com backlog e pendências, preservando Stream/grupo/volume e impedindo escritores
+simultâneos. A pausa mantém MQTT → Redis; não oferece retorno ao persistidor antigo.
+A compatibilidade com eventos legados e PERSIST_LEGACY_MAX_ID permanece no tratamento.
+As evidências e os SHAs da etapa 8 serão registrados na SCRUM-532 e no Confluence.
