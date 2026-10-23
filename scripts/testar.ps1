@@ -1,86 +1,20 @@
-﻿# Sobe o ambiente completo e roda o teste ponta a ponta.
-#
-#   powershell -ExecutionPolicy Bypass -File scripts\testar.ps1            # commits fixados dos submodules
-#   powershell -ExecutionPolicy Bypass -File scripts\testar.ps1 -Local     # pastas irmãs (..\API-DSM-4-*)
-#   powershell -ExecutionPolicy Bypass -File scripts\testar.ps1 -Unit      # + lint/testes/build de cada repo
-#   powershell -ExecutionPolicy Bypass -File scripts\testar.ps1 -Down      # derruba e apaga o banco no fim
-#
-#   Adicione -TestDatabase para usar PostgreSQL descartável.
-# Requer Docker Desktop aberto e Node 20+ (só para o e2e.mjs e o -Unit).
-param([switch]$Local, [switch]$Unit, [switch]$Down, [switch]$TestDatabase)
-
-$ErrorActionPreference = "Stop"
-$raiz = Split-Path $PSScriptRoot -Parent
-Set-Location $raiz
-
-if ($Local) { $env:SERVICES_DIR = ".." }
-$servicos = if ($env:SERVICES_DIR) { Join-Path $raiz $env:SERVICES_DIR } else { Join-Path $raiz "services" }
-$servicos = (Resolve-Path $servicos).Path
-Write-Host "Código dos serviços: $servicos" -ForegroundColor Cyan
-
-$repos = "API-DSM-4-BACKEND",
-         "API-DSM-4-RECEPCAO-DADOS", "API-DSM-4-BANCO", "API-DSM-4-FRONTEND"
-foreach ($r in $repos) {
-  if (-not (Test-Path (Join-Path $servicos $r))) {
-    Write-Host "Falta $r em $servicos." -ForegroundColor Red
-    if (-not $Local) { Write-Host "Rode: git submodule update --init --recursive" }
-    exit 1
-  }
+# Banco interno obrigatório; -TestDatabase mantido por compatibilidade.
+param([switch]$Local, [switch]$Down, [switch]$TestDatabase)
+$ErrorActionPreference = 'Stop'
+Set-Location (Split-Path $PSScriptRoot -Parent)
+if ($Local) { $env:SERVICES_DIR = '..' }
+if (-not $env:COMPOSE_PROJECT_NAME) { $env:COMPOSE_PROJECT_NAME = 'vulture-qa-' + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }
+if ($env:COMPOSE_PROJECT_NAME -notlike 'vulture-qa-*') { throw 'Projeto deve começar com vulture-qa-' }
+if (-not $env:PERSIST_SOURCE_ID) { $env:PERSIST_SOURCE_ID = $env:COMPOSE_PROJECT_NAME + '-redis-history' }
+$env:DATABASE_URL = ''
+$composeArgs = @('--env-file', 'NUL', '-p', $env:COMPOSE_PROJECT_NAME, '-f', 'docker-compose.yml', '-f', 'docker-compose.test.yml')
+try {
+    docker compose @composeArgs up -d --build --wait --wait-timeout 180
+    if ($LASTEXITCODE) { throw 'Falha ao subir QA' }
+    $env:BACKEND_URL = 'http://localhost:' + $(if ($env:BACKEND_PORT) { $env:BACKEND_PORT } else { '3000' })
+    $env:FRONTEND_URL = 'http://localhost:' + $(if ($env:PROXY_PORT) { $env:PROXY_PORT } else { '8080' })
+    node scripts/e2e.mjs
+    if ($LASTEXITCODE) { throw 'E2E reprovado' }
+} finally {
+    if ($Down) { docker compose @composeArgs down -v }
 }
-
-docker info *> $null
-if ($LASTEXITCODE -ne 0) { Write-Host "Docker não está rodando. Abra o Docker Desktop." -ForegroundColor Red; exit 1 }
-
-$composeArgs = @("-f", "docker-compose.yml")
-if ($TestDatabase) { $composeArgs += @("-f", "docker-compose.test.yml") }
-$falhas = 0
-function Rodar($titulo, $comando) {
-  $saida = cmd /c "$comando 2>&1"
-  if ($LASTEXITCODE -eq 0) { Write-Host ("  ok     " + $titulo) -ForegroundColor Green }
-  else {
-    Write-Host ("  FALHA  " + $titulo) -ForegroundColor Red
-    $saida | Select-Object -Last 25 | ForEach-Object { Write-Host ("         " + $_) }
-    $script:falhas++
-  }
-  return $saida
-}
-
-if ($Unit) {
-  Write-Host "`nTestes de cada repositório (como no CI)" -ForegroundColor Cyan
-  foreach ($r in "API-DSM-4-BACKEND") {
-    Write-Host $r
-    Push-Location (Join-Path $servicos $r)
-    if (-not (Test-Path node_modules)) { Rodar "npm ci" "npm ci --no-audit --no-fund" | Out-Null }
-    foreach ($s in "lint", "format", "typecheck", "test:coverage", "build") { Rodar $s "npm run -s $s" | Out-Null }
-    Pop-Location
-  }
-  Write-Host "API-DSM-4-FRONTEND"
-  Push-Location (Join-Path $servicos "API-DSM-4-FRONTEND\app")
-  if (-not (Test-Path node_modules)) { Rodar "npm ci" "npm ci --no-audit --no-fund" | Out-Null }
-  foreach ($s in "lint", "test", "build") { Rodar $s "npm run -s $s" | Out-Null }
-  Pop-Location
-}
-
-Write-Host "`nSubindo o ambiente (primeira vez demora: baixa imagens e compila)" -ForegroundColor Cyan
-docker compose @composeArgs up -d --build --wait
-if ($LASTEXITCODE -ne 0) {
-  docker compose @composeArgs ps
-  Write-Host "Falha ao subir. Logs: docker compose logs <servico>" -ForegroundColor Red
-  exit 1
-}
-docker compose @composeArgs ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}"
-
-Write-Host "`nTeste ponta a ponta" -ForegroundColor Cyan
-node scripts/e2e.mjs
-if ($LASTEXITCODE -ne 0) { $falhas++ }
-
-if ($Down) { docker compose @composeArgs down -v }
-
-Write-Host ""
-if ($falhas -eq 0) {
-  Write-Host "TUDO OK" -ForegroundColor Green
-  Write-Host "Front: http://localhost:3010"
-  exit 0
-}
-Write-Host "$falhas FALHA(S)" -ForegroundColor Red
-exit 1

@@ -14,3 +14,7 @@
 	path = services/API-DSM-4-BACKEND
 	url = https://github.com/Vulture-API/API-DSM-4-BACKEND.git
 	branch = dev
+[submodule "services/API-DSM-4-PERSISTENCIA-DADOS"]
+	path = services/API-DSM-4-PERSISTENCIA-DADOS
+	url = https://github.com/Vulture-API/API-DSM-4-PERSISTENCIA-DADOS.git
+	branch = dev

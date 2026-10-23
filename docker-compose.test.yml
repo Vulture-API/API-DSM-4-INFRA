@@ -3,6 +3,10 @@
 name: vulture-test
 
 services:
+  redis:
+    ports:
+      - "127.0.0.1:${TEST_REDIS_PORT:-26379}:6379"
+
   postgres:
     image: postgres:16-alpine
     environment:
@@ -13,10 +17,15 @@ services:
       - "127.0.0.1:${TEST_POSTGRES_PORT:-5433}:5432"
     volumes:
       - postgres_test_data:/var/lib/postgresql/data
-      - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/setup/schema-neon.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-      - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/setup/seed-dev.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+      - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/setup/schema-neon.sql:/docker-entrypoint-initdb.d/01-schema-neon.sql:ro
+      - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/migrations/015_role_permissions.sql:/docker-entrypoint-initdb.d/02-015_role_permissions.sql:ro
+      - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/migrations/016_occurrences.sql:/docker-entrypoint-initdb.d/03-016_occurrences.sql:ro
+      - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/migrations/016_sensor_limits_and_reading_precision.sql:/docker-entrypoint-initdb.d/04-016_sensor_limits_and_reading_precision.sql:ro
+      - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/migrations/017_telemetry_destinations_and_idempotency.sql:/docker-entrypoint-initdb.d/05-017_telemetry_destinations_and_idempotency.sql:ro
+      - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/migrations/018_telemetry_recovery_and_replay.sql:/docker-entrypoint-initdb.d/06-018_telemetry_recovery_and_replay.sql:ro
+      - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/setup/seed-dev.sql:/docker-entrypoint-initdb.d/07-seed-dev.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d agritech_test"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d agritech_test"]
       interval: 3s
       timeout: 3s
       retries: 30
@@ -28,9 +37,9 @@ services:
       postgres:
         condition: service_healthy
 
-  recepcao-persist:
+  persistencia:
     environment:
-      INGEST_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/agritech_test
+      PERSIST_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/agritech_test
     depends_on:
       postgres:
         condition: service_healthy
