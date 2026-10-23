@@ -438,80 +438,84 @@ def test_retention_protects_old_pending_and_all_groups(s, mode):
         assert "required_group_missing" in s.logs(receiver)
 
 
-def test_cutover_pause_and_controlled_legacy_return_preserve_history(s):
-    from telemetry import LEGACY_SHA, lock
+def test_cutover_pause_and_resume_preserve_history(s):
+    from telemetry import lock
 
-    s.op.env["TELEMETRY_STREAM"] = s.stream
+    overrides = dict(
+        TELEMETRY_STREAM=s.stream,
+        PERSIST_RECOVERY_INTERVAL_SECONDS=".2",
+        PERSIST_RECOVERY_MIN_IDLE_MS="7000",
+        PERSIST_LEASE_REFRESH_SECONDS="1",
+        PERSIST_LEASE_TTL_SECONDS="7",
+        PERSIST_PROCESSING_TIMEOUT_SECONDS="5",
+    )
+    previous = {key: s.op.env.get(key) for key in overrides}
+    s.op.env.update(overrides)
     volume_before = [
         (m["Name"], m["Destination"])
         for c in s.op.containers()
         for m in c["Mounts"]
         if c["Config"]["Labels"].get("com.docker.compose.service") == "redis"
     ]
-    with lock(s.op.project):
-        initial = s.publish({"temp": 12})
-        activated = s.op.activate()
-        s.settled(initial)
-        assert not activated["after"]["degraded"]
-        assert activated["after"]["pending"] == 0
-        last_delivered = s.r.xinfo_groups(s.stream)[0]["last-delivered-id"]
-        s.op.pause()
-        assert s.op.writers() == []
-        assert s.r.xinfo_groups(s.stream)[0]["last-delivered-id"] == last_delivered
-        assert not s.r.xpending(s.stream, s.group)["pending"]
-        assert s.r.xinfo_groups(s.stream)[0]["lag"] == 0
-        archive = subprocess.check_output(
-            ["git", "-C", "services/API-DSM-4-RECEPCAO-DADOS", "archive", LEGACY_SHA]
-        )
-        subprocess.run(
-            [
-                "docker",
-                "build",
-                "-q",
-                "-t",
-                f"vulture-recepcao-legacy:{LEGACY_SHA}",
-                "-",
-            ],
-            input=archive,
-            check=True,
-            capture_output=True,
-        )
-        s.op.args += [
-            "-f",
-            str(s.op.args[-1]).replace(
-                "docker-compose.test.yml", "docker-compose.legacy.yml"
-            ),
-        ]
-        old = s.start("recepcao-persist", ["persist"])
-        eventually(lambda: "persister_started" in s.logs(old))
-        assert [name for name, _ in s.op.writers()] == ["recepcao-persist"]
-        legacy_entry = s.publish({"temp": 13}, 1760000001)
-        eventually(
-            lambda: (
-                s.scalar("SELECT count(*) FROM readings WHERE sensor_id=%s", (s.temp,))
-                == 2
-            )
-        )
-        eventually(lambda: not s.r.xpending(s.stream, s.group)["pending"])
-        s.stop(old)
-        assert s.op.writers() == []
-        s.op.activate()
-        new = s.publish({"temp": 14}, 1760000002)
-        s.settled(new)
-        assert s.count("readings") == 3
-        # Legacy has no event ledger, so only two events are durable in the new service.
-        assert not s.completed(legacy_entry)
-        assert s.count("telemetry_events") == 2
-        volume_after = [
-            (m["Name"], m["Destination"])
-            for c in s.op.containers()
-            for m in c["Mounts"]
-            if c["Config"]["Labels"].get("com.docker.compose.service") == "redis"
-        ]
-        assert volume_after == volume_before
-        assert s.r.xlen(s.stream) == 3
-        s.op.pause()
-    s.op.env.pop("TELEMETRY_STREAM", None)
+    try:
+        with lock(s.op.project):
+            initial = s.publish({"temp": 12})
+            activated = s.op.activate()
+            s.settled(initial)
+            assert not activated["after"]["degraded"]
+            assert activated["after"]["pending"] == 0
+            last_delivered = s.r.xinfo_groups(s.stream)[0]["last-delivered-id"]
+            s.op.pause()
+            assert s.op.writers() == []
+            assert s.r.xinfo_groups(s.stream)[0]["last-delivered-id"] == last_delivered
+            assert not s.r.xpending(s.stream, s.group)["pending"]
+            # Receive while processing is paused, then preserve pending work too.
+            backlog = s.publish({"temp": 13}, 1760000001)
+            s.r.xreadgroup(s.group, "paused-worker", {s.stream: ">"}, count=1)
+            assert s.r.xpending(s.stream, s.group)["pending"] == 1
+            undelivered = s.publish({"temp": 14}, 1760000002)
+            assert s.count("readings") == 1
+            s.op.activate()
+            s.settled(backlog)
+            s.settled(undelivered)
+            assert [name for name, _ in s.op.writers()] == ["persistencia"]
+            assert s.count("readings") == 3
+            assert s.count("telemetry_events") == 3
+            assert s.r.xinfo_groups(s.stream)[0]["name"] == s.group
+            volume_after = [
+                (m["Name"], m["Destination"])
+                for c in s.op.containers()
+                for m in c["Mounts"]
+                if c["Config"]["Labels"].get("com.docker.compose.service") == "redis"
+            ]
+            assert volume_after == volume_before
+            assert s.r.xlen(s.stream) == 3
+            s.op.pause()
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                s.op.env.pop(key, None)
+            else:
+                s.op.env[key] = value
+
+
+def test_receiver_image_excludes_postgres_and_removed_mode(runtime):
+    program = (
+        "import importlib.util; "
+        "assert importlib.util.find_spec('asyncpg') is None; "
+        "assert importlib.util.find_spec('station_ingest.persistence') is None"
+    )
+    runtime.compose(
+        "run", "--rm", "--no-deps", "--entrypoint", "python", "recepcao", "-c", program
+    )
+    result = subprocess.run(
+        runtime.args + ["run", "--rm", "--no-deps", "recepcao", "persist"],
+        env=runtime.env,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode != 0
+    assert "station-persist consume" in result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("style", ["colon", "hyphen", "compact"])

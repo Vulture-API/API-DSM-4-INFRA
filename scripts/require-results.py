@@ -5,7 +5,7 @@ from pathlib import Path
 
 root = ET.parse(Path("reports/telemetry.xml")).getroot()
 cases = list(root.iter("testcase"))
-assert len(cases) >= 39
+assert len(cases) >= 40
 assert not list(root.iter("skipped")), "Required acceptance scenarios were skipped"
 assert not list(root.iter("failure")) and not list(root.iter("error"))
 for name in [
@@ -18,7 +18,8 @@ for name in [
     "replay_dry_run",
     "missing_content",
     "retention_protects",
-    "cutover_pause",
+    "cutover_pause_and_resume",
+    "receiver_image_excludes_postgres",
 ]:
     assert any(name in case.attrib["name"] for case in cases), f"Missing {name}"
 print(f"{len(cases)} required integration cases passed without skips")

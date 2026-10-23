@@ -13,7 +13,6 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-LEGACY_SHA = "4d83b0382b838e0a6f63c37edd365e6d761b2ca1"
 
 
 def run(argv, **kwargs):
@@ -248,9 +247,7 @@ asyncio.run(main())"""
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "action", choices=["preflight", "activate", "pause", "build-legacy"]
-    )
+    parser.add_argument("action", choices=["preflight", "activate", "pause"])
     parser.add_argument("--project", required=True)
     parser.add_argument(
         "--test", action="store_true", help="Disposable internal PostgreSQL"
@@ -259,26 +256,7 @@ def main():
     args = parser.parse_args()
     operation = Operation(args.project, args.test)
     with lock(args.project):
-        if args.action == "build-legacy":
-            if not args.test:
-                parser.error("Legacy image is restricted to a disposable rehearsal")
-            archive = subprocess.check_output(
-                [
-                    "git",
-                    "-C",
-                    str(ROOT / "services/API-DSM-4-RECEPCAO-DADOS"),
-                    "archive",
-                    LEGACY_SHA,
-                ]
-            )
-            subprocess.run(
-                ["docker", "build", "-t", f"vulture-recepcao-legacy:{LEGACY_SHA}", "-"],
-                input=archive,
-                check=True,
-            )
-            result = dict(legacy_revision=LEGACY_SHA)
-        else:
-            result = getattr(operation, args.action)()
+        result = getattr(operation, args.action)()
         args.evidence.parent.mkdir(parents=True, exist_ok=True)
         args.evidence.write_text(json.dumps(result, indent=2) + "\n")
         print(json.dumps(result))
