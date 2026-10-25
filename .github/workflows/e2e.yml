@@ -21,6 +21,8 @@ jobs:
       COMPOSE_PROJECT_NAME: vulture-qa-${{ github.run_id }}-${{ github.run_attempt }}
       PERSIST_SOURCE_ID: vulture-qa-${{ github.run_id }}-${{ github.run_attempt }}-history
       DATABASE_URL: ''
+      # Segredo descartável do ambiente de QA (não é credencial real).
+      JWT_SECRET: vulture-qa-${{ github.run_id }}-${{ github.run_attempt }}-jwt-secret-descartavel
       FRONTEND_URL: http://localhost:8080
     name: Ambiente completo + E2E
     runs-on: ubuntu-latest

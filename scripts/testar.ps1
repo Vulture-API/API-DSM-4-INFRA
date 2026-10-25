@@ -7,6 +7,7 @@ if (-not $env:COMPOSE_PROJECT_NAME) { $env:COMPOSE_PROJECT_NAME = 'vulture-qa-' 
 if ($env:COMPOSE_PROJECT_NAME -notlike 'vulture-qa-*') { throw 'Projeto deve começar com vulture-qa-' }
 if (-not $env:PERSIST_SOURCE_ID) { $env:PERSIST_SOURCE_ID = $env:COMPOSE_PROJECT_NAME + '-redis-history' }
 $env:DATABASE_URL = ''
+if (-not $env:JWT_SECRET) { $env:JWT_SECRET = -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) }) }
 $composeArgs = @('--env-file', 'NUL', '-p', $env:COMPOSE_PROJECT_NAME, '-f', 'docker-compose.yml', '-f', 'docker-compose.test.yml')
 try {
     docker compose @composeArgs up -d --build --wait --wait-timeout 180
