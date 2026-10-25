@@ -1,143 +1,161 @@
-# API-DSM-4-INFRA
+# AgriTech — INFRA
 
-Repositório para subir o AgriTech inteiro na máquina de uma vez: banco, as APIs, a recepção MQTT, o front e um simulador de estações. Também tem o teste ponta a ponta que a gente usa para ver se os serviços continuam conversando entre si.
+Ambiente integrado com backend Node, frontend Next.js, recepção MQTT/Redis e
+tratamento Python independente. Documentação oficial no [Confluence](https://vultureapi.atlassian.net/wiki/spaces/V/pages/46333954).
 
-Os serviços não ficam aqui. Cada um continua no seu repositório e entra como submodule na pasta `services/`, sempre na branch `dev`.
-
-## 🚀 Rodando tudo junto
-
-Precisa de:
-
-- Docker Desktop aberto
-- Git
-- Node 20 ou mais novo (só para o teste ponta a ponta)
-
-No PowerShell:
-
-```powershell
-git clone --recurse-submodules https://github.com/Vulture-API/API-DSM-4-INFRA.git
-cd API-DSM-4-INFRA
-powershell -ExecutionPolicy Bypass -File scripts\testar.ps1
-```
-
-No Linux, Mac ou Git Bash:
+Requisitos: Docker Compose v2, Git, Node 24 e Python 3.12 para operação/QA.
 
 ```bash
 git clone --recurse-submodules https://github.com/Vulture-API/API-DSM-4-INFRA.git
 cd API-DSM-4-INFRA
-./scripts/testar.sh
 ```
 
-O script sobe os containers, espera todo mundo ficar saudável e roda o teste. Se terminar com `TUDO OK`, é só abrir http://localhost:3010.
+O ambiente principal usa PostgreSQL externo previamente migrado. Configure `.env`
+com DATABASE_URL, PERSIST_SOURCE_ID e JWT_SECRET (32+ caracteres aleatórios; sem ele
+o login responde 503 e o portal não abre). O backend sobe com `ACCESS_CONTROL_ENABLED=true`
+e `OCCURRENCES_ENABLED=true` por padrão. O nginx repassa `Host` com a porta e
+`X-Forwarded-Proto`, que o frontend usa para validar a origem do login. Com o controle
+ligado, o simulador (perfil demo) entra com SIMULADOR_EMAIL/SIMULADOR_PASSWORD. A ativação controlada abaixo substitui o
+consumidor antigo. Esta entrega não autoriza implantação ou migrations externas.
 
-A primeira vez demora uns minutos porque baixa as imagens e compila tudo. Depois fica rápido.
-
-Se quiser só subir, sem rodar o teste:
-
-```bash
-docker compose up -d --build
-```
-
-## 🧩 O que sobe
-
-| Serviço | Porta | Repositório |
+| Serviço | Porta local padrão | Responsabilidade |
 | --- | --- | --- |
-| Front | 3010 | API-DSM-4-FRONTEND |
-| Usuários | 3000 | API-DSM-4-USUARIO |
-| Parâmetros e sensores | 3001 | API-DSM-4-PARAMETROS |
-| Alertas (com o motor de regras) | 3002 | API-DSM-4-ALERTAS |
-| Estações | 3005 | API-DSM-4-ESTACOES |
-| Recepção MQTT → Redis | | API-DSM-4-RECEPCAO-DADOS (`ingest`) |
-| Redis → Postgres | | API-DSM-4-RECEPCAO-DADOS (`persist`) |
-| PostgreSQL 16 | 5433 | schema e seeds do API-DSM-4-BANCO |
-| Mosquitto (MQTT) | 1883 | |
-| Redis | só dentro da rede do Docker | |
-| Simulador de estações | | `scripts/simulador.mjs` |
+| backend | 3000 | APIs, cadastros, consultas, motor de regras |
+| frontend / nginx | 3010 / 8080 | Portal / proxy |
+| mosquitto | 1883 | MQTT de desenvolvimento sem autenticação |
+| redis | interna | AOF e Stream |
+| recepcao | nenhuma | MQTT → Redis |
+| persistencia | nenhuma | Redis → PostgreSQL |
+| simulador (perfil demo) | nenhuma | Publicação automática optativa |
 
-O caminho de um dado é esse:
+## SCRUM-531 — Topologia de telemetria
 
-```
-estação → MQTT → recepcao → Redis → recepcao-persist → Postgres → APIs → front
-```
+Estações → MQTT QoS 1 → `recepcao` (Python, MQTT/Redis) → `telemetry:ingest`
+→ `persistencia` (Python, Redis/PostgreSQL) → leituras/ocorrências/quarentena.
+O BACKEND mantém APIs, cadastros e consultas. O tratamento tem imagem própria,
+comando `consume`, healthcheck `python -m station_persist status` e usuário sem root.
+Não há endpoint HTTP nos serviços Python. Desde a SCRUM-532, a recepção contém
+somente MQTT → Redis, sem cliente PostgreSQL ou modo `persist`. O consumo é executado exclusivamente pelo tratamento.
 
-O Postgres está na 5433 para não brigar com um Postgres que você já tenha instalado na 5432. Para conectar pelo DBeaver ou pelo psql: `postgresql://postgres:postgres@localhost:5433/vulture`.
+Os submódulos são fixados em commits. BACKEND/FRONTEND continuam nas revisões da
+base `cloudflare`; atualizações locais preparadas desses serviços não fazem parte
+desta entrega. CI nunca usa `submodule update --remote`. O novo submódulo usa HTTPS.
 
-## 🌱 Dados de demonstração
+### Configuração e ambiente descartável
 
-Quando o banco é criado pela primeira vez, ele já vem com dados para dar para mexer no sistema:
+Copie `.env.example` para desenvolvimento. Defina `PERSIST_SOURCE_ID` como identidade
+estável da história Redis; nunca a gere a cada reinício do ambiente principal.
+`TELEMETRY_STREAM` e `PERSIST_GROUP` devem preservar Stream/grupo anteriores.
+O consumidor gera identidade distinta por container/PID; ao executar manualmente
+com `-e PERSIST_CONSUMER=...`, use uma identidade exclusiva (lease impede duplicação).
+`PERSIST_LEGACY_MAX_ID` é opcional e explícito: nunca inferir o corte de eventos
+normalizados. Retenção fica desabilitada; antes de ativá-la, inclua o grupo configurado
+e os demais consumidores em `INGEST_RETENTION_REQUIRED_GROUPS`.
+Redis conserva AOF/volume e usa `noeviction`. Mosquitto local usa `persistence false`:
+a garantia não inclui reinício durável do broker nem QoS 0.
 
-- 10 usuários (senha de todos: `senha123`) e 6 propriedades
-- 15 estações e 93 sensores
-- 7 dias de leituras, uma a cada 10 minutos
-- 20 regras de alerta e os alertas que elas já teriam disparado
-
-Com tudo no ar, o simulador manda uma leitura por minuto das estações ativas. As estações 05 e 10 ficam Offline de propósito, e a 15 nunca comunicou, para dar para ver os status no front.
-
-Esses dados são só para ambiente local. Não rodar o `seed-demo.sql` no Neon.
-
-## 🛠️ Comandos que a gente mais usa
-
-| Comando | Para quê |
-| --- | --- |
-| `docker compose ps` | ver o que está rodando |
-| `docker compose logs -f api-alertas` | acompanhar o log de um serviço |
-| `docker compose up -d --build frontend` | recompilar só um serviço |
-| `docker compose down` | parar tudo (o banco fica salvo) |
-| `docker compose down -v` | parar tudo e apagar o banco |
-| `node scripts/e2e.mjs` | rodar só o teste ponta a ponta |
-| `git submodule update --remote` | puxar a última versão da `dev` de todos os serviços |
-
-## 🧪 Testando o que você mudou antes de subir
-
-Se você clonou os repositórios um do lado do outro (por exemplo `API4\API-DSM-4-ESTACOES`, `API4\API-DSM-4-INFRA`...), dá para o compose usar essas pastas em vez dos submodules. Assim você testa a sua branch junto com o resto:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\testar.ps1 -Local
+```bash
+./scripts/testar.sh --down           # banco interno, projeto exclusivo, cleanup restrito
+./scripts/testar.sh --local --down   # checkouts irmãos, inclusive PERSISTENCIA-DADOS
+# Windows: ./scripts/testar.ps1 -Down [-Local]
 ```
 
-O `-Local` é o mesmo que colocar `SERVICES_DIR=..` no `.env` (tem um exemplo no `.env.example`).
+QA ignora `.env`, substitui DATABASE_URL por banco interno, gera um JWT_SECRET
+descartável e sobe o backend com `ACCESS_CONTROL_ENABLED=false` (o E2E cria os próprios
+cadastros e testa login, páginas e proxy autenticado do frontend). Para testar com o
+controle ligado, exporte `ACCESS_CONTROL_ENABLED=true`, `E2E_ADMIN_EMAIL` e `E2E_ADMIN_PASSWORD`. Portas BACKEND_PORT,
+FRONTEND_PORT, PROXY_PORT, MQTT_PORT e TEST_POSTGRES_PORT são configuráveis e publicadas
+somente em localhost. O simulador é optativo: `docker compose --profile demo up -d`.
+O PostgreSQL descartável aplica schema, 015, as duas 016, 017, 018, 019 e seed, nessa ordem.
+Healthcheck TCP só permite dependentes após terminar a inicialização. Recepção não
+aguarda PostgreSQL e não recebe configuração de banco. Use outro projeto QA para
+reexecutar sobre banco novo; não aplique migrations externas com estes scripts.
 
-Outras opções do script:
+### Pré-verificação, ativação e pausa
 
-- `-Unit` roda também lint, testes e build de cada repositório, igual ao CI
-- `-Down` derruba tudo e apaga o banco no final
+Os comandos abaixo atuam no projeto indicado, usam lock local por projeto e geram
+inventário sem credenciais (revisões, imagens, volumes, Stream/grupo/PEL). Um único
+operador deve coordenar o projeto; não execute `compose up` manualmente em paralelo
+à troca. O lock não coordena operadores em outros hosts. Migrations são pré-requisito
+validado pelo pacote e devem ser preparadas fora desta entrega, nunca automaticamente.
 
-## ✅ O que o teste ponta a ponta verifica
-
-O `scripts/e2e.mjs` não precisa instalar nada e apaga tudo o que cria no final. Ele passa pelas histórias da Sprint 1:
-
-- **US03 Usuários:** cria, recusa e-mail repetido, edita, desativa e confere a paginação
-- **US02 Parâmetros e sensores:** cria tipo de sensor, recusa nome repetido, vincula sensor a uma estação
-- **US01 Estações:** lista propriedades, cria estação, normaliza o MAC e recusa MAC repetido
-- **US04 Status:** a estação nasce Offline, recebe uma leitura pelo MQTT e fica Online
-- **US05 Alertas:** cria a regra `temp > 30`, manda uma leitura de 35,5 e confere que o alerta disparou e pode ser reconhecido
-- **Front:** as telas abrem e o proxy `/api/*` chega em cada serviço
-
-São 51 verificações. No final aparece quantas passaram.
-
-## 📡 Formato da mensagem da estação
-
-Tópico `estacoes/<MAC>/dados`:
-
-```json
-{ "estacao_id": "AA:BB:CC:DD:EE:01", "unix_time": 1760000000, "temp": 23.5, "umid": 61 }
+```bash
+python3 scripts/telemetry.py preflight --project vulture --evidence reports/preflight.json
+python3 scripts/telemetry.py activate  --project vulture --evidence reports/activation.json
+python3 scripts/telemetry.py pause     --project vulture --evidence reports/pause.json
+# Em QA, acrescentar --test e usar --project vulture-qa-<identificador>.
 ```
 
-- `estacao_id` é o MAC cadastrado na estação
-- cada outro campo numérico é o identificador de um sensor da estação (o `local_identifier`)
-- campo que não bate com nenhum sensor é ignorado, e o log do `recepcao-persist` mostra quantos foram
+Ativação constrói antes de parar escritores; valida schema/configuração e identidade,
+para os consumidores do projeto (inclusive o órfão recepcao-persist), verifica saída
+e inicia apenas persistencia, sem parar MQTT/Redis/recepção/PostgreSQL nem recriar
+grupo. A identidade fica vinculada à história no Redis. Confira status, backlog,
+pendências, logs, destinos e consultas após a troca; health não substitui aceite.
+Se houver falha, a operação encerra explicitamente: inspecione o relatório e pause.
 
-## 🤖 CI
+A reversão padrão **pausa o novo tratamento** e mantém MQTT → Redis, PEL e banco.
+Não reinicia automaticamente o legado depois de ACKs do novo serviço. Não use ACK
+manual, reset de grupo, exclusão de pendências ou limpeza do Stream para resolver erros.
+`docker compose down` para sem apagar volumes; `down -v` é restrito ao QA descartável.
 
-O workflow `.github/workflows/e2e.yml` sobe o ambiente com a `dev` de todos os repositórios e roda o teste ponta a ponta. Ele roda em PR, dá para disparar na mão e roda sozinho todo dia útil às 7h. Se algum merge quebrar a integração entre os serviços, aparece aqui.
+### Retirada do persistidor antigo (SCRUM-532)
 
-## ⚠️ Problemas comuns
+O overlay, a construção da imagem congelada e o ensaio de retorno ao legado foram
+removidos. `telemetry.py` oferece somente `preflight`, `activate` e `pause`.
+A pausa mantém MQTT → Redis e preserva o backlog e as pendências. A retomada ativa
+o tratamento independente com a mesma identidade de origem e grupo. Não há retorno
+automático ou comando de construção do persistidor removido.
 
-- **Porta ocupada:** confira se não tem outro Postgres, Redis ou Node usando a porta. O Redis não expõe porta de propósito.
-- **Front apontando para o lugar errado:** o front grava os endereços das APIs no build. Mudou algum endereço, rode `docker compose up -d --build frontend`.
-- **Banco com dados antigos:** os seeds só rodam quando o volume é criado. Para começar do zero, `docker compose down -v` e suba de novo.
-- **Mapa sem fundo:** o mapa usa os tiles do OpenStreetMap, então precisa de internet. Sem internet os pinos aparecem mesmo assim.
+[Resultados da SCRUM-532](docs/etapa8-evidencias.md): revisões, testes e limites.
 
-## Limites
+A detecção de containers antigos órfãos continua protegendo a transição contra
+escritores simultâneos. Nenhum procedimento apaga volumes ou altera a posição do
+grupo para contornar falhas. Compatibilidade de eventos legados e o corte explícito
+`PERSIST_LEGACY_MAX_ID` continuam no tratamento.
 
-Esse ambiente é só para desenvolvimento. O Mosquitto não tem autenticação e o banco usa senha fixa. As migrations 010 a 012 do API-DSM-4-BANCO (particionamento com pg_partman) não rodam aqui porque a imagem do Postgres não tem a extensão.
+## SCRUM-453 — QA integrada
+
+A suíte `qa/` publica MQTT QoS 1 e observa Redis/PostgreSQL/CLI/API. Não importa
+implementações de validação nem acrescenta opções de teste aos serviços.
+Cada cenário usa Stream e cadastro exclusivos no projeto Docker descartável.
+Falhas são reproduzidas com indisponibilidade local, lock PostgreSQL + SIGKILL,
+ACL Redis que impede XACK e trigger temporária na quarentena. Triggers/usuários
+são removidos ao final; o cenário de conteúdo ausente corrompe deliberadamente
+uma entrada de teste e exige incidente durável/PEL preservada, sem ACK manual.
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r qa/requirements.txt
+# Suba primeiro o overlay descartável, com COMPOSE_PROJECT_NAME=vulture-qa-<id>,
+# PERSIST_SOURCE_ID=<identidade da história> e DATABASE_URL vazia.
+# Se mudar portas, exporte MQTT_PORT, TEST_REDIS_PORT e TEST_POSTGRES_PORT para pytest.
+.venv/bin/pytest qa --junitxml=reports/telemetry.xml
+.venv/bin/python scripts/require-results.py
+python3 scripts/check-components.py
+python3 scripts/evidence.py  # antes de down -v, somente projeto vulture-qa-*
+```
+
+Os cenários interrompem os serviços do projeto QA e deixam recepção/tratamento
+principais parados; não use esse projeto como ambiente de desenvolvimento compartilhado.
+O ambiente descartável deve ser novo para o E2E de regressão: rode `node scripts/e2e.mjs`
+antes da suíte de falhas. A fixture NUMERIC extremo permanece no banco para evidência;
+as APIs/motor existentes convertem para float8 e podem falhar com esse valor.
+Precisão extrema é conferida em SQL. Não há mudança do contrato HTTP nesta etapa.
+Séries de dados válidos excluem inconsistentes; o snapshot/overview atual tem outra
+semântica e não se declara que todas as consultas filtram inconsistentes.
+
+O check **Ambiente completo + E2E** preserva a regressão do produto e executa a QA
+ampliada. Um segundo job executa os testes dos gitlinks de recepção e tratamento
+com lint, pacote e cobertura >=80% por componente, e os testes do BANCO, benchmark
+com 100 mil leituras, particionamento e reaplicação das migrations 016/017/018.
+Integrações não podem passar com skips. Os runners de verificação incluem os testes,
+sem herdar sua exclusão do `.dockerignore` de produção. As imagens de produção
+continuam usando os Dockerfiles originais sem root.
+
+JUnit, cobertura, pacotes, logs por cenário, inventário de imagens/volumes e SHAs
+ficam em `reports/` (fora do Git) e nos artefatos do Actions. Os scripts de Bash e
+PowerShell são auxiliares; o ensaio automatizado executado em CI é Linux.
+A referência de QA no Confluence é proposta em revisão; CI não representa aceite
+funcional do PO. A SCRUM-531 e a SCRUM-453 foram concluídas pelo time. A SCRUM-532 retira o
+persistidor antigo e valida novamente a separação dos serviços; seu aceite permanece
+com o time. Resultados históricos da etapa 7 estão preservados na documentação.

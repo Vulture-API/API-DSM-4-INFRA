@@ -1,4 +1,4 @@
-// Teste ponta a ponta da Sprint 01, contra o ambiente já no ar.
+// Teste ponta a ponta do monolito, contra o ambiente já no ar.
 //
 //   node scripts/e2e.mjs
 //
@@ -13,13 +13,18 @@
 
 import { mqttPublish } from "./lib/mqtt.mjs";
 
+const BACKEND_URL = (process.env.BACKEND_URL ?? "http://localhost:3000").replace(/\/$/, "");
 const URLS = {
-  usuario: process.env.USUARIO_URL ?? "http://localhost:3000",
-  parametros: process.env.PARAMETROS_URL ?? "http://localhost:3001",
-  alertas: process.env.ALERTAS_URL ?? "http://localhost:3002",
-  estacoes: process.env.ESTACOES_URL ?? "http://localhost:3005",
+  usuario: BACKEND_URL,
+  parametros: BACKEND_URL,
+  alertas: BACKEND_URL,
+  estacoes: BACKEND_URL,
   frontend: process.env.FRONTEND_URL ?? "http://localhost:3010",
 };
+// Com ACCESS_CONTROL_ENABLED=true, o E2E entra com esta conta (precisa das
+// permissões de cadastro). Sem ela, usa a API aberta do ambiente de QA.
+const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 const MQTT_HOST = process.env.MQTT_HOST ?? "localhost";
 const MQTT_PORT = Number(process.env.MQTT_PORT ?? 1883);
 const TIMEOUT_MS = Number(process.env.E2E_TIMEOUT_MS ?? 45_000);
@@ -30,6 +35,7 @@ const MAC = `E2:E2:${id.slice(0, 2)}:${id.slice(2, 4)}:${id.slice(4, 6)}:01`;
 
 let ok = 0;
 let fail = 0;
+let backendToken = null;
 const cleanup = [];
 
 const cor = (c, s) => (process.stdout.isTTY ? `\x1b[${c}m${s}\x1b[0m` : s);
@@ -48,12 +54,16 @@ function check(desc, cond, extra) {
 }
 const secao = (t) => console.log(`\n${cor(36, t)}`);
 
-async function http(method, url, body) {
+async function http(method, url, body, extraHeaders = {}) {
   try {
+    const headers = { ...extraHeaders };
+    if (body) headers["content-type"] = "application/json";
+    if (backendToken && url.startsWith(BACKEND_URL)) headers.authorization = `Bearer ${backendToken}`;
     const res = await fetch(url, {
       method,
-      headers: body ? { "content-type": "application/json" } : {},
+      headers,
       body: body ? JSON.stringify(body) : undefined,
+      redirect: "manual",
       signal: AbortSignal.timeout(10_000),
     });
     const text = await res.text();
@@ -63,7 +73,7 @@ async function http(method, url, body) {
     } catch {
       json = text;
     }
-    return { status: res.status, body: json };
+    return { status: res.status, body: json, headers: res.headers };
   } catch (error) {
     return { status: 0, body: String(error.cause?.code ?? error.message) };
   }
@@ -81,7 +91,7 @@ async function waitFor(desc, fn) {
 }
 
 async function main() {
-  console.log(`E2E Sprint 01  (sufixo ${id}, MAC ${MAC})`);
+  console.log(`E2E monolito  (sufixo ${id}, MAC ${MAC})`);
 
   secao("Saúde dos serviços");
   const health = {};
@@ -101,10 +111,20 @@ async function main() {
     return;
   }
 
+  if (ADMIN_EMAIL && ADMIN_PASSWORD) {
+    secao("Autenticação no backend");
+    const login = await http("POST", `${BACKEND_URL}/api/auth/login`, {
+      email: ADMIN_EMAIL,
+      password: ADMIN_PASSWORD,
+    });
+    backendToken = login.body?.access_token ?? null;
+    check("login com a conta do E2E", login.status === 200 && Boolean(backendToken), login.status);
+  }
+
   secao("US03 — Usuários");
   const roles = await http("GET", `${URLS.usuario}/api/roles`);
   check("lista cargos", roles.status === 200 && roles.body.length > 0, roles);
-  const roleId = roles.body?.[0]?.id ?? 1;
+  const roleId = roles.body?.find?.((r) => r.name === "Administrador")?.id ?? roles.body?.[0]?.id ?? 1;
   const email = `e2e.${id.toLowerCase()}@vulture.dev`;
   const user = await http("POST", `${URLS.usuario}/api/users`, {
     role_id: roleId,
@@ -305,39 +325,98 @@ async function main() {
     );
   }
 
-  secao("Front-end (páginas e proxy)");
+  secao("Front-end (login, páginas e proxy autenticado)");
+  const frontendOrigin = new URL(URLS.frontend).origin;
+  const semSessao = await http("GET", `${URLS.frontend}/api/backend/stations`);
+  check("proxy sem sessão devolve 401", semSessao.status === 401, semSessao.status);
+  const paginaSemSessao = await http("GET", `${URLS.frontend}/dashboard`);
+  check(
+    "página protegida sem sessão vai para /login",
+    [307, 308].includes(paginaSemSessao.status) &&
+      (paginaSemSessao.headers?.get("location") ?? "").includes("/login"),
+    paginaSemSessao.status,
+  );
+
+  let loginEmail = ADMIN_EMAIL;
+  let loginPassword = ADMIN_PASSWORD;
+  if (!loginEmail || !loginPassword) {
+    // Reativa o usuário criado acima (foi desativado no teste da US03).
+    const ativa = await http("PUT", `${URLS.usuario}/api/users/${userId}`, {
+      role_id: roleId,
+      name: `Usuário E2E ${id}`,
+      active: true,
+    });
+    check("reativa usuário para o login", ativa.status === 200 && ativa.body.active === true, ativa);
+    loginEmail = email;
+    loginPassword = "senha-forte-123";
+  }
+  const login = await http(
+    "POST",
+    `${URLS.frontend}/api/auth/login`,
+    { email: loginEmail, password: loginPassword },
+    { origin: frontendOrigin },
+  );
+  const cookie = (login.headers?.getSetCookie?.() ?? [])
+    .map((c) => c.split(";")[0])
+    .filter((c) => c.startsWith("agritech_session="))
+    .join("; ");
+  check(
+    `login pelo frontend (${frontendOrigin})`,
+    login.status === 200 && Boolean(cookie) && Array.isArray(login.body?.permissions),
+    login,
+  );
+  const comSessao = { cookie };
+  const outraOrigem = await http(
+    "POST",
+    `${URLS.frontend}/api/auth/login`,
+    { email: loginEmail, password: loginPassword },
+    { origin: "https://outro-site.test" },
+  );
+  check("login de outra origem é recusado (403)", outraOrigem.status === 403, outraOrigem.status);
+
   for (const page of [
     "/dashboard",
+    "/dashboard/stats",
     "/estacoes",
     `/estacoes/${stationId}`,
+    "/historico",
+    "/propriedades",
     "/administracao/parametros",
     "/administracao/usuarios",
     "/alertas",
     "/alertas/regras",
   ]) {
-    const r = await http("GET", URLS.frontend + page);
+    const r = await http("GET", URLS.frontend + page, undefined, comSessao);
     check(`página ${page}`, r.status === 200, r.status);
   }
   const proxies = [
-    ["/api/users?limit=100", (b) => b.data.some((u) => u.id === userId)],
-    ["/api/roles", (b) => Array.isArray(b) && b.length > 0],
-    ["/api/stations/overview", (b) => b.stations.some((s) => s.id === stationId)],
-    ["/api/stations?limit=100", (b) => b.data.some((s) => s.id === stationId)],
-    ["/api/stations/properties", (b) => Array.isArray(b) && b.length > 0],
-    ["/api/alerts/config?limit=100", (b) => b.data.some((c) => c.id === regraId)],
-    [`/api/sensors?station_id=${stationId}`, (b) => b.data.length === 1],
-    ["/api/sensor-types", (b) => b.some((t) => t.id === tipoId)],
+    ["users?limit=100", (b) => b.data.some((u) => u.email === loginEmail)],
+    ["roles", (b) => Array.isArray(b) && b.length > 0],
+    ["stations/overview", (b) => b.stations.some((s) => s.id === stationId)],
+    ["stations?limit=100", (b) => b.data.some((s) => s.id === stationId)],
+    [`stations/${stationId}/current`, (b) => b.stations.some((s) => s.station_id === stationId && s.readings.length > 0)],
+    ["stations/statistics", (b) => typeof b.readings_total === "number"],
+    ["properties", (b) => Array.isArray(b) && b.length > 0],
+    ["alerts/config?limit=100", (b) => b.data.some((c) => c.id === regraId)],
+    [`sensors?station_id=${stationId}`, (b) => b.data.length === 1],
+    ["sensor-types", (b) => b.some((t) => t.id === tipoId)],
+    ["occurrences?limit=10", (b) => Array.isArray(b.data)],
   ];
   for (const [path, valid] of proxies) {
-    const r = await http("GET", URLS.frontend + path);
+    const r = await http("GET", `${URLS.frontend}/api/backend/${path}`, undefined, comSessao);
     let passou = false;
     try {
       passou = r.status === 200 && valid(r.body);
     } catch {
       passou = false;
     }
-    check(`proxy ${path}`, passou, r);
+    check(`proxy /api/backend/${path}`, passou, r.body);
   }
+  const logout = await http("POST", `${URLS.frontend}/api/auth/logout`, undefined, {
+    ...comSessao,
+    origin: frontendOrigin,
+  });
+  check("logout pelo frontend", [200, 204].includes(logout.status), logout.status);
 }
 
 async function limpar() {

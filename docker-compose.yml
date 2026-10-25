@@ -2,18 +2,23 @@
 #
 #   docker compose up -d --build        sobe tudo
 #   node scripts/e2e.mjs                testa o fluxo inteiro
-#   docker compose down                 para (os dados ficam no volume)
-#   docker compose down -v              para e apaga o banco
+#   docker compose down                 para
 #
 # SERVICES_DIR diz de onde vem o código de cada serviço:
-#   ./services  (padrão)  os submodules deste repositório, na branch dev
-#   ..                    as pastas irmãs, ex.: C:\...\API4\API-DSM-4-USUARIO
-#                         (para testar alterações locais antes do push)
+#   ./services  (padrão)  os commits fixados dos submodules deste repositório
+#   ..                    as pastas irmãs, ex.: C:\...\API4\API-DSM-4-BACKEND
+#
+# O PostgreSQL é externo/online.
+# Configure DATABASE_URL no arquivo .env.
+#
+# Exemplo:
+# DATABASE_URL=postgresql://usuario:senha@host:5432/banco?sslmode=require
+#
+# Não commite credenciais no Git.
 
 name: vulture
 
-# Saudável = o servidor HTTP responde (qualquer status < 500). Não exige a
-# rota /health para o ambiente subir; o e2e.mjs cobra a rota separadamente.
+# Intervalos compartilhados dos healthchecks HTTP.
 x-node-healthcheck: &node-healthcheck
   interval: 5s
   timeout: 5s
@@ -24,39 +29,13 @@ services:
   # --------------------------------------------------------------------------
   # Infraestrutura
   # --------------------------------------------------------------------------
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: vulture
-      TZ: UTC
-    ports:
-      # 5433 no host para não brigar com um Postgres instalado na máquina.
-      - "${POSTGRES_PORT:-5433}:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      # Rodam só na primeira subida (volume vazio). Para recriar o banco:
-      # docker compose down -v
-      - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/setup/schema-neon.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-      - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/setup/seed-dev.sql:/docker-entrypoint-initdb.d/02-seed-dev.sql:ro
-      # Dados de demonstração: 15 estações, 7 dias de leituras, alertas...
-      - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/setup/seed-demo.sql:/docker-entrypoint-initdb.d/03-seed-demo.sql:ro
-    healthcheck:
-      # -h 127.0.0.1 (TCP): durante os scripts de init o Postgres sobe um
-      # servidor temporário só no socket; checando por TCP, o "healthy" só
-      # vem quando o servidor definitivo está no ar.
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d vulture"]
-      interval: 3s
-      timeout: 3s
-      retries: 30
-
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes"]
-    # Sem porta no host: só a recepção usa o Redis, pela rede interna.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+
     volumes:
       - redis_data:/data
+
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 3s
@@ -65,118 +44,116 @@ services:
 
   mosquitto:
     image: eclipse-mosquitto:2
+
     ports:
-      - "${MQTT_PORT:-1883}:1883"
+      - "127.0.0.1:${MQTT_PORT:-1883}:1883"
+
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
     healthcheck:
-      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-t", "healthcheck", "-m", "ok"]
+      test:
+        [
+          "CMD",
+          "mosquitto_pub",
+          "-h",
+          "localhost",
+          "-t",
+          "healthcheck",
+          "-m",
+          "ok"
+        ]
       interval: 5s
       timeout: 5s
       retries: 20
 
-  # --------------------------------------------------------------------------
-  # Microsserviços (Node 24 / Fastify)
-  # --------------------------------------------------------------------------
-  api-usuario:
+  # Backend monolítico (Node 24 / Fastify)
+  backend:
     restart: unless-stopped
-    build: ${SERVICES_DIR:-./services}/API-DSM-4-USUARIO
+    build: ${SERVICES_DIR:-./services}/API-DSM-4-BACKEND
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/vulture
-    ports:
-      - "3000:3000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      <<: *node-healthcheck
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
-
-  api-parametros:
-    restart: unless-stopped
-    build: ${SERVICES_DIR:-./services}/API-DSM-4-PARAMETROS
-    environment:
-      NODE_ENV: production
-      PORT: 3001
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/vulture
-    ports:
-      - "3001:3001"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      <<: *node-healthcheck
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
-
-  api-alertas:
-    restart: unless-stopped
-    build: ${SERVICES_DIR:-./services}/API-DSM-4-ALERTAS
-    environment:
-      NODE_ENV: production
-      PORT: 3002
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/vulture
-      # Banco local e exclusivo: pode ligar o motor sem disputar checkpoint.
+      DATABASE_URL: ${DATABASE_URL:-}
+      STATION_OFFLINE_THRESHOLD_MINUTES: 10
       RULES_ENGINE_ENABLED: "true"
       RULES_ENGINE_INTERVAL_MS: 5000
       RULES_ENGINE_BATCH_SIZE: 500
+      # Login (frontend) e autorização. JWT_SECRET é obrigatório: sem ele o
+      # login responde 503 e o portal não abre. Gere um valor aleatório longo.
+      JWT_SECRET: ${JWT_SECRET:?Configure JWT_SECRET com ao menos 32 caracteres}
+      ACCESS_CONTROL_ENABLED: ${ACCESS_CONTROL_ENABLED:-true}
+      # Monitor de estações sem comunicação e limites dos sensores (US09)
+      OCCURRENCES_ENABLED: ${OCCURRENCES_ENABLED:-true}
     ports:
-      - "3002:3002"
-    depends_on:
-      postgres:
-        condition: service_healthy
+      - "127.0.0.1:${BACKEND_PORT:-3000}:3000"
     healthcheck:
       <<: *node-healthcheck
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3002/health').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
-
-  api-estacoes:
-    restart: unless-stopped
-    build: ${SERVICES_DIR:-./services}/API-DSM-4-ESTACOES
-    environment:
-      NODE_ENV: production
-      PORT: 3005
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/vulture
-      STATION_OFFLINE_THRESHOLD_MINUTES: 10
-    ports:
-      - "3005:3005"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      <<: *node-healthcheck
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3005/health').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      test:
+        ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"]
 
   # --------------------------------------------------------------------------
-  # Recepção de dados (Python): MQTT -> Redis Stream -> PostgreSQL
+  # Recepção (MQTT -> Redis) e tratamento independente (Redis -> PostgreSQL)
   # --------------------------------------------------------------------------
   recepcao:
     build: ${SERVICES_DIR:-./services}/API-DSM-4-RECEPCAO-DADOS
     command: ["ingest"]
+
     environment:
       INGEST_MQTT_HOST: mosquitto
       INGEST_MQTT_CLIENT_ID: station-ingest-local
       INGEST_REDIS_URL: redis://redis:6379/0
+      INGEST_REDIS_STREAM: ${TELEMETRY_STREAM:-telemetry:ingest}
+      INGEST_RETENTION_ENABLED: ${INGEST_RETENTION_ENABLED:-false}
+      INGEST_RETENTION_DAYS: ${INGEST_RETENTION_DAYS:-7}
+      INGEST_RETENTION_INTERVAL_SECONDS: ${INGEST_RETENTION_INTERVAL_SECONDS:-60}
+      INGEST_RETENTION_REQUIRED_GROUPS: '${INGEST_RETENTION_REQUIRED_GROUPS:-["postgres-persister"]}'
+      INGEST_RETENTION_TRIM_LIMIT: ${INGEST_RETENTION_TRIM_LIMIT:-10000}
+      INGEST_RETENTION_MAX_GROUPS: ${INGEST_RETENTION_MAX_GROUPS:-128}
+      INGEST_SHUTDOWN_TIMEOUT_SECONDS: ${INGEST_SHUTDOWN_TIMEOUT_SECONDS:-30}
       INGEST_LOG_LEVEL: INFO
+
     depends_on:
       mosquitto:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+    stop_grace_period: ${INGEST_STOP_GRACE_PERIOD:-45s}
     restart: unless-stopped
 
-  recepcao-persist:
-    build: ${SERVICES_DIR:-./services}/API-DSM-4-RECEPCAO-DADOS
-    command: ["persist"]
+  persistencia:
+    build: ${SERVICES_DIR:-./services}/API-DSM-4-PERSISTENCIA-DADOS
+    command: ["consume"]
     environment:
-      INGEST_REDIS_URL: redis://redis:6379/0
-      INGEST_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/vulture
-      INGEST_LOG_LEVEL: INFO
+      PERSIST_REDIS_URL: ${PERSIST_REDIS_URL:-redis://redis:6379/0}
+      PERSIST_DATABASE_URL: ${DATABASE_URL:-}
+      PERSIST_SOURCE_ID: ${PERSIST_SOURCE_ID:?Configure uma identidade estavel para esta origem Redis}
+      PERSIST_STREAM: ${TELEMETRY_STREAM:-telemetry:ingest}
+      PERSIST_GROUP: ${PERSIST_GROUP:-postgres-persister}
+      # Consumer omitted: hostname/PID gives distinct identities to replicas.
+      PERSIST_LEGACY_MAX_ID: ${PERSIST_LEGACY_MAX_ID:-}
+      PERSIST_BATCH_SIZE: ${PERSIST_BATCH_SIZE:-500}
+      PERSIST_BLOCK_MS: ${PERSIST_BLOCK_MS:-1000}
+      PERSIST_SHUTDOWN_TIMEOUT_SECONDS: ${PERSIST_SHUTDOWN_TIMEOUT_SECONDS:-10}
+      PERSIST_RECOVERY_INTERVAL_SECONDS: ${PERSIST_RECOVERY_INTERVAL_SECONDS:-10}
+      PERSIST_RECOVERY_MIN_IDLE_MS: ${PERSIST_RECOVERY_MIN_IDLE_MS:-120000}
+      PERSIST_RECOVERY_BATCH_SIZE: ${PERSIST_RECOVERY_BATCH_SIZE:-100}
+      PERSIST_LEASE_REFRESH_SECONDS: ${PERSIST_LEASE_REFRESH_SECONDS:-10}
+      PERSIST_LEASE_TTL_SECONDS: ${PERSIST_LEASE_TTL_SECONDS:-60}
+      PERSIST_PROCESSING_TIMEOUT_SECONDS: ${PERSIST_PROCESSING_TIMEOUT_SECONDS:-30}
+      PERSIST_METRICS_INTERVAL_SECONDS: ${PERSIST_METRICS_INTERVAL_SECONDS:-30}
+      PERSIST_LOG_LEVEL: INFO
     depends_on:
       redis:
         condition: service_healthy
-      postgres:
-        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "station_persist", "status"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    stop_grace_period: ${PERSIST_STOP_GRACE_PERIOD:-45s}
     restart: unless-stopped
 
   # --------------------------------------------------------------------------
@@ -184,47 +161,85 @@ services:
   # --------------------------------------------------------------------------
   frontend:
     restart: unless-stopped
+
     build:
       context: ${SERVICES_DIR:-./services}/API-DSM-4-FRONTEND/app
-      # O Next grava os destinos do proxy no build: por isso são build args,
-      # apontando para os nomes dos serviços dentro da rede do compose.
+
       args:
-        USERS_API_URL: http://api-usuario:3000
-        PARAMETERS_API_URL: http://api-parametros:3001
-        ALERTS_API_URL: http://api-alertas:3002
-        STATIONS_API_URL: http://api-estacoes:3005
+        USERS_API_URL: http://backend:3000
+        PARAMETERS_API_URL: http://backend:3000
+        ALERTS_API_URL: http://backend:3000
+        STATIONS_API_URL: http://backend:3000
+
     ports:
-      - "3010:3010"
+      - "127.0.0.1:${FRONTEND_PORT:-3010}:3010"
+
     healthcheck:
       <<: *node-healthcheck
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3010/dashboard').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3010/dashboard').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"
+        ]
+
     depends_on:
-      api-usuario:
-        condition: service_healthy
-      api-parametros:
-        condition: service_healthy
-      api-alertas:
-        condition: service_healthy
-      api-estacoes:
+      backend:
         condition: service_healthy
 
   # --------------------------------------------------------------------------
-  # Simulador das estações de demonstração: publica leituras no MQTT a cada
-  # minuto, para o dashboard ficar vivo (estações 05 e 10 ficam Offline).
+  # Reverse Proxy
+  # --------------------------------------------------------------------------
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:${PROXY_PORT:-8080}:80"
+
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+
+    depends_on:
+      frontend:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/dashboard || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  # --------------------------------------------------------------------------
+  # Simulador das estações de demonstração
   # --------------------------------------------------------------------------
   simulador:
+    profiles: [demo]
     image: node:24-alpine
     restart: unless-stopped
+
     command: ["node", "/scripts/simulador.mjs"]
+
     environment:
       MQTT_HOST: mosquitto
       SIMULADOR_INTERVALO_S: 60
+      STATIONS_API_URL: http://backend:3000
+      PARAMETERS_API_URL: http://backend:3000
+      # Conta usada pelo simulador quando ACCESS_CONTROL_ENABLED=true
+      # (precisa de stations.read, sensors.read e sensor-types.read).
+      SIMULADOR_EMAIL: ${SIMULADOR_EMAIL:-}
+      SIMULADOR_PASSWORD: ${SIMULADOR_PASSWORD:-}
+
     volumes:
       - ./scripts:/scripts:ro
+
     depends_on:
       mosquitto:
         condition: service_healthy
+      backend:
+        condition: service_healthy
 
 volumes:
-  postgres_data:
   redis_data:

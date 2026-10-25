@@ -1,6 +1,4 @@
-# Sobe o ambiente inteiro (submodules na branch dev) e roda o teste ponta a
-# ponta. Roda em PR, manualmente e toda manhã — assim, se um merge em qualquer
-# repositório quebrar a integração, aparece aqui no dia seguinte.
+# Valida os commits fixados com PostgreSQL descartável, sem acessar o banco externo.
 name: E2E
 
 on:
@@ -9,22 +7,30 @@ on:
   schedule:
     - cron: "0 10 * * 1-5" # 07h em Brasília, dias úteis
 
+permissions:
+  contents: read
+
 concurrency:
   group: e2e-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   e2e:
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.test.yml
+      COMPOSE_PROJECT_NAME: vulture-qa-${{ github.run_id }}-${{ github.run_attempt }}
+      PERSIST_SOURCE_ID: vulture-qa-${{ github.run_id }}-${{ github.run_attempt }}-history
+      DATABASE_URL: ''
+      # Segredo descartável do ambiente de QA (não é credencial real).
+      JWT_SECRET: vulture-qa-${{ github.run_id }}-${{ github.run_attempt }}-jwt-secret-descartavel
+      FRONTEND_URL: http://localhost:8080
     name: Ambiente completo + E2E
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      - name: Atualizar submodules para a ponta da dev
-        run: git submodule update --init --remote
 
       - name: Versões testadas
         run: git submodule foreach --quiet 'echo "$name $(git rev-parse --short HEAD)"'
@@ -33,16 +39,58 @@ jobs:
         with:
           node-version: 24
 
+      - name: Validar simulador e configuração
+        run: |
+          node --test scripts/simulador.test.mjs
+          docker compose --env-file /dev/null config --quiet
+
       - name: Subir ambiente
-        run: docker compose up -d --build --wait
+        run: docker compose --env-file /dev/null up -d --build --wait --wait-timeout 180
 
       - name: Teste ponta a ponta
         run: node scripts/e2e.mjs
 
-      - name: Logs em caso de falha
-        if: failure()
-        run: docker compose logs --no-color --tail 200
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: QA da telemetria
+        run: |
+          python -m pip install -r qa/requirements.txt
+          ruff check scripts/telemetry.py scripts/evidence.py scripts/check-components.py scripts/require-results.py qa
+          ruff format --check scripts/telemetry.py scripts/evidence.py scripts/check-components.py scripts/require-results.py qa
+          pytest qa --junitxml=reports/telemetry.xml
+          python scripts/require-results.py
+
+      - name: Evidências
+        if: always()
+        run: python scripts/evidence.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ambiente-e2e
+          path: reports/
 
       - name: Derrubar
         if: always()
-        run: docker compose down -v
+        run: |
+          [[ "$COMPOSE_PROJECT_NAME" == vulture-qa-* ]]
+          docker compose --env-file /dev/null down -v
+
+  components:
+    name: Suítes fixadas de recepção, tratamento e BANCO
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Componentes, cobertura e migrations
+        run: python scripts/check-components.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: componentes-fixados
+          path: reports/components/
