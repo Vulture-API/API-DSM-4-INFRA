@@ -56,8 +56,33 @@ export function leitura(estacao, sensors, typeById, date = new Date()) {
   return payload;
 }
 
-async function getJson(url) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+// Com ACCESS_CONTROL_ENABLED=true o catálogo exige JWT: entra com a conta do
+// simulador e renova o token quando expira.
+const EMAIL = process.env.SIMULADOR_EMAIL;
+const PASSWORD = process.env.SIMULADOR_PASSWORD;
+let token = null;
+
+async function login() {
+  const response = await fetch(`${STATIONS_API_URL}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) throw new Error(`login do simulador: HTTP ${response.status}`);
+  token = (await response.json()).access_token;
+}
+
+async function getJson(url, retry = true) {
+  if (!token && EMAIL && PASSWORD) await login();
+  const response = await fetch(url, {
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (response.status === 401 && retry && EMAIL && PASSWORD) {
+    token = null;
+    return getJson(url, false);
+  }
   if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
   return response.json();
 }
