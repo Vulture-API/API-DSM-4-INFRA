@@ -151,7 +151,7 @@ try:
 cp -a /contract /tmp/banco-check
 cd /tmp/banco-check
 ROWS=100000 bash benchmark/run.sh postgresql://postgres:postgres@localhost:5432/banco
-for migration in 013_restore_column_defaults 016_sensor_limits_and_reading_precision 017_telemetry_destinations_and_idempotency 018_telemetry_recovery_and_replay; do
+for migration in 013_restore_column_defaults 016_sensor_limits_and_reading_precision 017_telemetry_destinations_and_idempotency 018_telemetry_recovery_and_replay 019_property_permissions; do
  for repeat in 1 2; do psql postgresql://postgres:postgres@localhost:5432/banco -q -v ON_ERROR_STOP=1 -f migrations/$migration.sql; done
 done
 psql postgresql://postgres:postgres@localhost:5432/banco -v ON_ERROR_STOP=1 -c "DO \\$\\$ BEGIN IF assert_readings_default_empty() <> 0 THEN RAISE EXCEPTION 'DEFAULT partition is not empty'; END IF; END \\$\\$;"

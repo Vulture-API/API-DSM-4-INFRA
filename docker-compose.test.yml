@@ -23,7 +23,8 @@ services:
       - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/migrations/016_sensor_limits_and_reading_precision.sql:/docker-entrypoint-initdb.d/04-016_sensor_limits_and_reading_precision.sql:ro
       - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/migrations/017_telemetry_destinations_and_idempotency.sql:/docker-entrypoint-initdb.d/05-017_telemetry_destinations_and_idempotency.sql:ro
       - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/migrations/018_telemetry_recovery_and_replay.sql:/docker-entrypoint-initdb.d/06-018_telemetry_recovery_and_replay.sql:ro
-      - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/setup/seed-dev.sql:/docker-entrypoint-initdb.d/07-seed-dev.sql:ro
+      - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/migrations/019_property_permissions.sql:/docker-entrypoint-initdb.d/07-019_property_permissions.sql:ro
+      - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/setup/seed-dev.sql:/docker-entrypoint-initdb.d/08-seed-dev.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d agritech_test"]
       interval: 3s
@@ -33,6 +34,9 @@ services:
   backend:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/agritech_test
+      # QA cria os próprios cadastros pela API. Com controle ligado, informe
+      # E2E_ADMIN_EMAIL/E2E_ADMIN_PASSWORD e ACCESS_CONTROL_ENABLED=true.
+      ACCESS_CONTROL_ENABLED: ${ACCESS_CONTROL_ENABLED:-false}
     depends_on:
       postgres:
         condition: service_healthy

@@ -11,7 +11,11 @@ cd API-DSM-4-INFRA
 ```
 
 O ambiente principal usa PostgreSQL externo previamente migrado. Configure `.env`
-com DATABASE_URL e PERSIST_SOURCE_ID. A ativação controlada abaixo substitui o
+com DATABASE_URL, PERSIST_SOURCE_ID e JWT_SECRET (32+ caracteres aleatórios; sem ele
+o login responde 503 e o portal não abre). O backend sobe com `ACCESS_CONTROL_ENABLED=true`
+e `OCCURRENCES_ENABLED=true` por padrão. O nginx repassa `Host` com a porta e
+`X-Forwarded-Proto`, que o frontend usa para validar a origem do login. Com o controle
+ligado, o simulador (perfil demo) entra com SIMULADOR_EMAIL/SIMULADOR_PASSWORD. A ativação controlada abaixo substitui o
 consumidor antigo. Esta entrega não autoriza implantação ou migrations externas.
 
 | Serviço | Porta local padrão | Responsabilidade |
@@ -56,10 +60,13 @@ a garantia não inclui reinício durável do broker nem QoS 0.
 # Windows: ./scripts/testar.ps1 -Down [-Local]
 ```
 
-QA ignora `.env` e substitui DATABASE_URL por banco interno. Portas BACKEND_PORT,
+QA ignora `.env`, substitui DATABASE_URL por banco interno, gera um JWT_SECRET
+descartável e sobe o backend com `ACCESS_CONTROL_ENABLED=false` (o E2E cria os próprios
+cadastros e testa login, páginas e proxy autenticado do frontend). Para testar com o
+controle ligado, exporte `ACCESS_CONTROL_ENABLED=true`, `E2E_ADMIN_EMAIL` e `E2E_ADMIN_PASSWORD`. Portas BACKEND_PORT,
 FRONTEND_PORT, PROXY_PORT, MQTT_PORT e TEST_POSTGRES_PORT são configuráveis e publicadas
 somente em localhost. O simulador é optativo: `docker compose --profile demo up -d`.
-O PostgreSQL descartável aplica schema, 015, as duas 016, 017, 018 e seed, nessa ordem.
+O PostgreSQL descartável aplica schema, 015, as duas 016, 017, 018, 019 e seed, nessa ordem.
 Healthcheck TCP só permite dependentes após terminar a inicialização. Recepção não
 aguarda PostgreSQL e não recebe configuração de banco. Use outro projeto QA para
 reexecutar sobre banco novo; não aplique migrations externas com estes scripts.

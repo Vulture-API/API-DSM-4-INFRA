@@ -79,6 +79,12 @@ services:
       RULES_ENGINE_ENABLED: "true"
       RULES_ENGINE_INTERVAL_MS: 5000
       RULES_ENGINE_BATCH_SIZE: 500
+      # Login (frontend) e autorização. JWT_SECRET é obrigatório: sem ele o
+      # login responde 503 e o portal não abre. Gere um valor aleatório longo.
+      JWT_SECRET: ${JWT_SECRET:?Configure JWT_SECRET com ao menos 32 caracteres}
+      ACCESS_CONTROL_ENABLED: ${ACCESS_CONTROL_ENABLED:-true}
+      # Monitor de estações sem comunicação e limites dos sensores (US09)
+      OCCURRENCES_ENABLED: ${OCCURRENCES_ENABLED:-true}
     ports:
       - "127.0.0.1:${BACKEND_PORT:-3000}:3000"
     healthcheck:
@@ -221,6 +227,10 @@ services:
       SIMULADOR_INTERVALO_S: 60
       STATIONS_API_URL: http://backend:3000
       PARAMETERS_API_URL: http://backend:3000
+      # Conta usada pelo simulador quando ACCESS_CONTROL_ENABLED=true
+      # (precisa de stations.read, sensors.read e sensor-types.read).
+      SIMULADOR_EMAIL: ${SIMULADOR_EMAIL:-}
+      SIMULADOR_PASSWORD: ${SIMULADOR_PASSWORD:-}
 
     volumes:
       - ./scripts:/scripts:ro
