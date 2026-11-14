@@ -1,0 +1,57 @@
+{
+  "date": "2026-11-14",
+  "timezone": "America/Sao_Paulo",
+  "remote_ci": "Não executado, conforme escolha expressa do usuário",
+  "backend": {
+    "command": "TEST_DATABASE_URL=<PostgreSQL descartável> npm run test:coverage",
+    "files": 108,
+    "passed": 1030,
+    "failed": 0,
+    "skipped": 0,
+    "line_coverage": 94.56,
+    "checks": [
+      "lint",
+      "format",
+      "typecheck",
+      "build",
+      "typecheck após build"
+    ]
+  },
+  "frontend": {
+    "command": "npx vitest run --coverage --maxWorkers=2",
+    "files": 46,
+    "passed": 370,
+    "failed": 0,
+    "skipped": 0,
+    "line_coverage": 92.2,
+    "checks": [
+      "lint",
+      "tsc --noEmit",
+      "build de produção"
+    ]
+  },
+  "database": {
+    "passed": 15,
+    "failed": 0,
+    "skipped": 0,
+    "checks": [
+      "schema completo aplicado duas vezes",
+      "migration 022: criação, backfill, reaplicação após revogação, PK, FKs, cascatas e índice",
+      "seed demo aplicado duas vezes com Gerente e Cliente em propriedades diferentes"
+    ]
+  },
+  "e2e": {
+    "existing_checks": 63,
+    "existing_failures": 0,
+    "property_scope": "Aprovado: login e proxy com três perfis, vínculo automático, substituição, 404, modo leitura e revogação na mesma sessão",
+    "project": "vulture-qa-scrum396-e2e"
+  },
+  "simulator": {
+    "passed": 1
+  },
+  "artifacts": "reports/scrum396 (ignorado pelo Git; logs locais)",
+  "limitations": [
+    "Integração ainda depende de merge; sem PR ou deploy",
+    "Nenhuma migration ou seed aplicado a banco compartilhado"
+  ]
+}
