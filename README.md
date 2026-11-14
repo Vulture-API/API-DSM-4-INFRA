@@ -66,7 +66,7 @@ cadastros e testa login, páginas e proxy autenticado do frontend). Para testar 
 controle ligado, exporte `ACCESS_CONTROL_ENABLED=true`, `E2E_ADMIN_EMAIL` e `E2E_ADMIN_PASSWORD`. Portas BACKEND_PORT,
 FRONTEND_PORT, PROXY_PORT, MQTT_PORT e TEST_POSTGRES_PORT são configuráveis e publicadas
 somente em localhost. O simulador é optativo: `docker compose --profile demo up -d`.
-O PostgreSQL descartável aplica schema, 015, as duas 016, 017, 018, 019 e seed, nessa ordem.
+O PostgreSQL descartável aplica schema, 015, as duas 016, 017, 018, 019, 020, 021 e seed, nessa ordem.
 Healthcheck TCP só permite dependentes após terminar a inicialização. Recepção não
 aguarda PostgreSQL e não recebe configuração de banco. Use outro projeto QA para
 reexecutar sobre banco novo; não aplique migrations externas com estes scripts.
