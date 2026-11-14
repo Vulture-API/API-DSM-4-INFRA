@@ -5,10 +5,10 @@
   "backend": {
     "command": "TEST_DATABASE_URL=<PostgreSQL descartável> npm run test:coverage",
     "files": 108,
-    "passed": 1030,
+    "passed": 1062,
     "failed": 0,
     "skipped": 0,
-    "line_coverage": 94.56,
+    "line_coverage": 95.09,
     "checks": [
       "lint",
       "format",
@@ -31,27 +31,33 @@
     ]
   },
   "database": {
-    "passed": 15,
+    "passed": 16,
     "failed": 0,
     "skipped": 0,
     "checks": [
       "schema completo aplicado duas vezes",
       "migration 022: criação, backfill, reaplicação após revogação, PK, FKs, cascatas e índice",
-      "seed demo aplicado duas vezes com Gerente e Cliente em propriedades diferentes"
+      "seed demo aplicado duas vezes com Gerente e Cliente em propriedades diferentes",
+      "Atualização de seed demo legado, inicialização única e preservação de revogação"
     ]
   },
   "e2e": {
     "existing_checks": 63,
     "existing_failures": 0,
     "property_scope": "Aprovado: login e proxy com três perfis, vínculo automático, substituição, 404, modo leitura e revogação na mesma sessão",
-    "project": "vulture-qa-scrum396-e2e"
+    "project": "vulture-qa-scrum396-fixes-e2e"
   },
   "simulator": {
     "passed": 1
   },
-  "artifacts": "reports/scrum396 (ignorado pelo Git; logs locais)",
+  "artifacts": "reports/scrum396/correcoes (ignorado pelo Git; logs locais)",
   "limitations": [
     "Integração ainda depende de merge; sem PR ou deploy",
     "Nenhuma migration ou seed aplicado a banco compartilhado"
-  ]
+  ],
+  "review_fixes": {
+    "scope": "30 cenários negativos de concorrência, um fluxo positivo de escrita e validação dos parâmetros de origem/destino",
+    "partial_user": "Após criar a conta, e-mail bloqueado e senha oculta; repetição salva somente os vínculos",
+    "demo_seed": "Bootstrap único fora do bloco que retorna para demonstrações existentes"
+  }
 }

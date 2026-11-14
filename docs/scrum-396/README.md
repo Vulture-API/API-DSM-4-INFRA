@@ -2,6 +2,12 @@
 
 Entrega das tarefas SCRUM-608 a SCRUM-618 atribuídas a Rafael (Sette 0_0), em 14/11/2026. As branches foram publicadas sem PRs, merges ou deploys; a integração ainda depende de merge. Os status do Jira foram preservados. CI remoto não executado, conforme escolha do usuário; validações locais com PostgreSQL e ambiente Docker descartáveis.
 
+## Correções da revisão
+
+A revisão de 14/11/2026 encontrou três falhas, agora corrigidas: operações por ID passaram a aplicar o escopo no próprio SQL, com regressões para movimentações entre propriedades; e-mail e senha deixam de ser editáveis após a criação parcial da conta; o seed inicializa vínculos em demonstrações antigas uma única vez e preserva revogações posteriores.
+
+Esta branch de revisão substitui a documentação inicial da SCRUM-618. O histórico publicado foi preservado.
+
 ## Entregas e contratos
 
 - [Branches, bases e commits por tarefa](branches.md), também disponíveis em [JSON](branches.json).
@@ -9,7 +15,7 @@ Entrega das tarefas SCRUM-608 a SCRUM-618 atribuídas a Rafael (Sette 0_0), em 1
 - [Dicionário físico de user_properties](dicionario-user-properties.md) e [modelo SQL](modelo-user-properties.sql).
 - [Resultados das validações](validacao.json).
 
-A implementação usa as camadas existentes: autenticação consulta perfil, permissões e vínculos no PostgreSQL; `resolveAccessibleProperties` centraliza o escopo; contexto assíncrono isolado por requisição leva esse escopo às consultas parametrizadas dos repositórios. Os filtros entram antes de contagens, paginação e agregações. Processadores internos de telemetria não herdam uma restrição global de usuário.
+A implementação usa as camadas existentes: autenticação consulta perfil, permissões e vínculos no PostgreSQL; `resolveAccessibleProperties` centraliza o escopo; contexto assíncrono isolado por requisição leva esse escopo às consultas parametrizadas dos repositórios. Os filtros entram antes de contagens, paginação e agregações e também nas consultas por ID, inserções e alterações SQL. As alterações de vínculo de estações verificam origem e destino na própria operação. Processadores internos de telemetria não herdam uma restrição global de usuário.
 
 ## Regras de acesso
 
@@ -34,13 +40,13 @@ A regra cobre propriedades, estações, sensores, dados atuais, séries, histór
 
 Parâmetros inválidos retornam 400; falta de autenticação, 401; perfil/permissão insuficiente, 403; usuário ou propriedade inexistente, 404. Falhas preservam os vínculos anteriores. Substituições concorrentes são serializadas por lock do usuário.
 
-O frontend oferece seleção múltipla ao Administrador, reabre os vínculos persistidos e invalida os caches afetados. Se criar/editar o usuário funcionar e salvar vínculos falhar, o formulário mantém a identidade criada e repete apenas a etapa pendente. Mudanças de perfil, permissões ou escopo limpam dados anteriores e reiniciam o WebSocket. Cliente não recebe ações de escrita mesmo com concessões indevidas; POST de relatório continua sendo consulta.
+O frontend oferece seleção múltipla ao Administrador, reabre os vínculos persistidos e invalida os caches afetados. Se criar/editar o usuário funcionar e salvar vínculos falhar, o formulário mantém a identidade criada e repete apenas a etapa pendente. Depois da criação, o e-mail fica bloqueado e o campo de senha é ocultado, evitando confirmar alterações de credenciais que não são enviadas pela API de edição. Mudanças de perfil, permissões ou escopo limpam dados anteriores e reiniciam o WebSocket. Cliente não recebe ações de escrita mesmo com concessões indevidas; POST de relatório continua sendo consulta.
 
 ## Banco e integração
 
 Aplicar a migration `022_user_properties.sql` depois da 021, antes de iniciar o backend atualizado. Ela cria PK composta, FKs com cascata e índice por propriedade. O backfill dos proprietários ocorre apenas ao criar a tabela; reaplicar não devolve acesso revogado. `owner_user_id` permanece cadastral. A propriedade criada pelo Gerente e o vínculo do criador são gravados na mesma transação.
 
-O instalador e `docker-compose.test.yml` incluem a migration. O seed demo vincula Carlos Mendes à Fazenda Santa Rita e Fernanda Costa à Fazenda Boa Vista. Seu seed e reaplicação foram conferidos em banco descartável.
+O instalador e `docker-compose.test.yml` incluem a migration. O seed demo vincula Carlos Mendes à Fazenda Santa Rita e Fernanda Costa à Fazenda Boa Vista, inclusive quando a massa demo já existia antes da migration 022. O marcador `demo_user_properties_v1`, em `processing_checkpoints`, registra a inicialização única; não interfere nos cursores de telemetria e impede restaurar vínculos revogados em reaplicações. O caminho de atualização legado e a reaplicação após revogação foram testados em banco descartável.
 
 O E2E existente permanece em modo legado; uma etapa adicional prepara `qa/seed-property-scope.sql`, liga o controle, executa `scripts/e2e-property-scope.mjs` e restaura o modo legado antes da QA de telemetria. Essa fixture cria contas exclusivamente para QA e concede escrita ao Cliente deliberadamente para comprovar que o perfil continua impedido de escrever.
 
