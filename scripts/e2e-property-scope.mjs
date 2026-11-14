@@ -33,7 +33,7 @@ await api(admin, `users/${client.user.id}/properties`, "PUT", { property_ids: [b
 assert.deepEqual((await api(manager, "properties")).map(p => p.id), [a.id]);
 assert.deepEqual((await api(client, "properties")).map(p => p.id), [b.id]);
 for (const [property, tag] of [[a, "A"], [b, "B"]]) {
-  await api(admin, "stations", "POST", { property_id: property.id, name: `Estação Scope ${tag}`, mac_address: `scope-${tag}-${suffix}`, latitude: -23, longitude: -45 }, 201);
+  await api(admin, "stations", "POST", { property_id: property.id, name: `Estação Scope ${tag}`, mac_address: `02:39:${suffix.toString(16).slice(-6).match(/../g).join(":")}:${tag === "A" ? "01" : "02"}`, latitude: -23, longitude: -45 }, 201);
 }
 const managerStations = (await api(manager, "stations")).data;
 const clientStations = (await api(client, "stations")).data;
