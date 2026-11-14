@@ -45,8 +45,10 @@ services:
   mosquitto:
     image: eclipse-mosquitto:2
 
+    # Padrão: só o próprio computador alcança o broker. Para a estação física
+    # (ESP32) publicar pela rede local, defina MQTT_BIND no .env (ver .env.example).
     ports:
-      - "127.0.0.1:${MQTT_PORT:-1883}:1883"
+      - "${MQTT_BIND:-127.0.0.1}:${MQTT_PORT:-1883}:1883"
 
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro

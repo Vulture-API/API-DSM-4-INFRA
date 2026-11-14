@@ -22,7 +22,7 @@ consumidor antigo. Esta entrega não autoriza implantação ou migrations extern
 | --- | --- | --- |
 | backend | 3000 | APIs, cadastros, consultas, motor de regras |
 | frontend / nginx | 3010 / 8080 | Portal / proxy |
-| mosquitto | 1883 | MQTT de desenvolvimento sem autenticação |
+| mosquitto | 1883 | MQTT de desenvolvimento sem autenticação; `MQTT_BIND=0.0.0.0` no `.env` publica na rede local para a estação física (ESP32) |
 | redis | interna | AOF e Stream |
 | recepcao | nenhuma | MQTT → Redis |
 | persistencia | nenhuma | Redis → PostgreSQL |
