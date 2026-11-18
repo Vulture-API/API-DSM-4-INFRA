@@ -1,0 +1,169 @@
+{
+  "date": "2026-11-14",
+  "timezone": "America/Sao_Paulo",
+  "remote_ci": "Não executado, conforme escolha expressa do usuário",
+  "backend": {
+    "command": "TEST_DATABASE_URL=<PostgreSQL descartável> npm run test:coverage",
+    "files": 108,
+    "passed": 1062,
+    "failed": 0,
+    "skipped": 0,
+    "line_coverage": 95.09,
+    "checks": [
+      "lint",
+      "format",
+      "typecheck",
+      "build",
+      "typecheck após build"
+    ]
+  },
+  "frontend": {
+    "command": "npx vitest run --coverage --maxWorkers=2",
+    "files": 46,
+    "passed": 370,
+    "failed": 0,
+    "skipped": 0,
+    "line_coverage": 92.2,
+    "checks": [
+      "lint",
+      "tsc --noEmit",
+      "build de produção"
+    ]
+  },
+  "database": {
+    "passed": 16,
+    "failed": 0,
+    "skipped": 0,
+    "checks": [
+      "schema completo aplicado duas vezes",
+      "migration 022: criação, backfill, reaplicação após revogação, PK, FKs, cascatas e índice",
+      "seed demo aplicado duas vezes com Gerente e Cliente em propriedades diferentes",
+      "Atualização de seed demo legado, inicialização única e preservação de revogação"
+    ]
+  },
+  "e2e": {
+    "existing_checks": 63,
+    "existing_failures": 0,
+    "property_scope": "Aprovado: login e proxy com três perfis, vínculo automático, substituição, 404, modo leitura e revogação na mesma sessão",
+    "project": "vulture-qa-scrum396-fixes-e2e"
+  },
+  "simulator": {
+    "passed": 1
+  },
+  "artifacts": "reports/scrum396/correcoes (ignorado pelo Git; logs locais)",
+  "limitations": [
+    "Integração ainda depende de merge; sem PR ou deploy",
+    "Nenhuma migration ou seed aplicado a banco compartilhado"
+  ],
+  "review_fixes": {
+    "scope": "30 cenários negativos de concorrência, um fluxo positivo de escrita e validação dos parâmetros de origem/destino",
+    "partial_user": "Após criar a conta, e-mail bloqueado e senha oculta; repetição salva somente os vínculos",
+    "demo_seed": "Bootstrap único fora do bloco que retorna para demonstrações existentes"
+  },
+  "ci_review_2026_11_17": {
+    "new_unit_tests": 90,
+    "coverage_threshold_changed": false,
+    "environment": "PostgreSQL 16 descartável, somente loopback; nenhuma migration em banco compartilhado",
+    "commands": "Mesmos scripts do CI: COBERTURA_PARCIAL=1 nos projetos unit/integration, depois test:ci:coverage",
+    "local_results": [
+      {
+        "task": "SCRUM-610",
+        "commit": "682261122e0e7eb8da8e1d08130e8618a446b4fa",
+        "unit_passed": 614,
+        "integration_passed": 454,
+        "skipped": 0,
+        "line_coverage": 94.53,
+        "checks": [
+          "lint",
+          "format",
+          "typecheck",
+          "test:ci:unit",
+          "test:ci:int",
+          "test:ci:coverage",
+          "build"
+        ]
+      },
+      {
+        "task": "SCRUM-611",
+        "commit": "e61aa03b88083da9ae532a631e526ccad4995014",
+        "unit_passed": 644,
+        "integration_passed": 454,
+        "skipped": 0,
+        "line_coverage": 94.51,
+        "checks": [
+          "lint",
+          "format",
+          "typecheck",
+          "test:ci:unit",
+          "test:ci:int",
+          "test:ci:coverage",
+          "build"
+        ]
+      },
+      {
+        "task": "SCRUM-612",
+        "commit": "2bd835b6da0172fbe09bb7b9c4007161963d4c34",
+        "unit_passed": 644,
+        "integration_passed": 454,
+        "skipped": 0,
+        "line_coverage": 94.22,
+        "checks": [
+          "lint",
+          "format",
+          "typecheck",
+          "test:ci:unit",
+          "test:ci:int",
+          "test:ci:coverage",
+          "build"
+        ]
+      },
+      {
+        "task": "SCRUM-613",
+        "commit": "da0f66e23efc91304933f4c9b80a8a8f402c00c9",
+        "unit_passed": 644,
+        "integration_passed": 454,
+        "skipped": 0,
+        "line_coverage": 93.48,
+        "checks": [
+          "lint",
+          "format",
+          "typecheck",
+          "test:ci:unit",
+          "test:ci:int",
+          "test:ci:coverage",
+          "build"
+        ]
+      },
+      {
+        "task": "SCRUM-617",
+        "commit": "c2cccd3833934440acb26ceb0a4562881fd60611",
+        "unit_passed": 645,
+        "integration_passed": 507,
+        "skipped": 0,
+        "line_coverage": 95.22,
+        "checks": [
+          "lint",
+          "format",
+          "typecheck",
+          "test:ci:unit",
+          "test:ci:int",
+          "test:ci:coverage",
+          "build"
+        ]
+      }
+    ],
+    "remote_ci": {
+      "task": "SCRUM-610",
+      "commit": "682261122e0e7eb8da8e1d08130e8618a446b4fa",
+      "conclusion": "success",
+      "url": "https://github.com/Vulture-API/API-DSM-4-BACKEND/actions/runs/44203151757",
+      "integration_tests_skipped": 0,
+      "note": "Job de procedência exclusivo de dev pulado pela condição do workflow; suítes de testes executadas integralmente."
+    },
+    "evidence": "ci-2026-11-17.md; logs locais reports/scrum396/ci-2026-11-17 (ignorados pelo Git)",
+    "limits": [
+      "PRs encadeados com base em feature não disparam o workflow configurado apenas para dev/main; seus gates foram reproduzidos localmente.",
+      "Nenhum workflow disparado manualmente, nenhum PR integrado nesta revisão, nenhum deploy."
+    ]
+  }
+}
