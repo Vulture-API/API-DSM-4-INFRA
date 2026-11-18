@@ -50,6 +50,13 @@ jobs:
       - name: Teste ponta a ponta
         run: node scripts/e2e.mjs
 
+      - name: Escopo de propriedades com três perfis (SCRUM-616)
+        run: |
+          docker compose --env-file /dev/null exec -T postgres psql -U postgres -d agritech_test -v ON_ERROR_STOP=1 < qa/seed-property-scope.sql
+          ACCESS_CONTROL_ENABLED=true docker compose --env-file /dev/null up -d --no-deps --wait backend
+          node scripts/e2e-property-scope.mjs
+          ACCESS_CONTROL_ENABLED=false docker compose --env-file /dev/null up -d --no-deps --wait backend
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
