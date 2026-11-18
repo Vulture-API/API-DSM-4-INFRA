@@ -1,6 +1,6 @@
 # SCRUM-396 — Escopo de acesso por propriedade
 
-Entrega das tarefas SCRUM-608 a SCRUM-618 atribuídas a Rafael (Sette 0_0), em 14/11/2026. As branches foram publicadas sem PRs, merges ou deploys; a integração ainda depende de merge. Os status do Jira foram preservados. CI remoto não executado, conforme escolha do usuário; validações locais com PostgreSQL e ambiente Docker descartáveis.
+Entrega das tarefas SCRUM-608 a SCRUM-618 atribuídas a Rafael (Sette 0_0), em 14/11/2026. Na publicação inicial, as validações foram locais, com PostgreSQL e ambiente Docker descartáveis. Os PRs foram abertos posteriormente; a integração completa ainda depende de merge. Os status do Jira foram preservados. A [revisão de CI de 17/11/2026](ci-2026-11-17.md) registra os novos testes unitários, a sincronização com `dev` e os resultados do CI automático.
 
 ## Correções da revisão
 

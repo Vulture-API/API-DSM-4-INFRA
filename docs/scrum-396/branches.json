@@ -23,7 +23,7 @@
     "repository": "API-DSM-4-BACKEND",
     "branch": "feature/SCRUM-609-back-implementar-resolucao-das-propriedades-acessiveis-por-usuario",
     "base": "origin/dev",
-    "commit": "6f2a842fc8bccb5957cae7f7bff46bd685388263",
+    "commit": "11e7ee30906eb6025ee37373a16f4e6127c79d10",
     "url": "https://github.com/Vulture-API/API-DSM-4-BACKEND/tree/feature/SCRUM-609-back-implementar-resolucao-das-propriedades-acessiveis-por-usuario"
   },
   {
@@ -31,8 +31,8 @@
     "title": "[BACK] Aplicar escopo por propriedade nas listagens e consultas",
     "repository": "API-DSM-4-BACKEND",
     "branch": "feature/SCRUM-610-back-aplicar-escopo-por-propriedade-nas-listagens-e-consultas",
-    "base": "feature/SCRUM-609-back-implementar-resolucao-das-propriedades-acessiveis-por-usuario",
-    "commit": "142177ee5969004b9d52328d2b2ceceebbe30336",
+    "base": "origin/dev",
+    "commit": "682261122e0e7eb8da8e1d08130e8618a446b4fa",
     "url": "https://github.com/Vulture-API/API-DSM-4-BACKEND/tree/feature/SCRUM-610-back-aplicar-escopo-por-propriedade-nas-listagens-e-consultas"
   },
   {
@@ -41,7 +41,7 @@
     "repository": "API-DSM-4-BACKEND",
     "branch": "feature/SCRUM-611-back-implementar-validacao-de-escopo-nas-rotas-por-id",
     "base": "feature/SCRUM-610-back-aplicar-escopo-por-propriedade-nas-listagens-e-consultas",
-    "commit": "f3316bf8ef5473ef9075006aa6a1c4c784b6dbc7",
+    "commit": "e61aa03b88083da9ae532a631e526ccad4995014",
     "url": "https://github.com/Vulture-API/API-DSM-4-BACKEND/tree/feature/SCRUM-611-back-implementar-validacao-de-escopo-nas-rotas-por-id"
   },
   {
@@ -50,7 +50,7 @@
     "repository": "API-DSM-4-BACKEND",
     "branch": "feature/SCRUM-612-back-vincular-automaticamente-o-gerente-agricola-a-propriedade-cadastrada",
     "base": "feature/SCRUM-611-back-implementar-validacao-de-escopo-nas-rotas-por-id",
-    "commit": "9c04bb43963076b1e6b8697144e696fd513c06cc",
+    "commit": "2bd835b6da0172fbe09bb7b9c4007161963d4c34",
     "url": "https://github.com/Vulture-API/API-DSM-4-BACKEND/tree/feature/SCRUM-612-back-vincular-automaticamente-o-gerente-agricola-a-propriedade-cadastrada"
   },
   {
@@ -59,7 +59,7 @@
     "repository": "API-DSM-4-BACKEND",
     "branch": "feature/SCRUM-613-back-implementar-endpoints-de-vinculo-entre-usuarios-e-propriedades",
     "base": "feature/SCRUM-612-back-vincular-automaticamente-o-gerente-agricola-a-propriedade-cadastrada",
-    "commit": "fbc524e52fe78471ea1bb36961d414b4d25b31a6",
+    "commit": "da0f66e23efc91304933f4c9b80a8a8f402c00c9",
     "url": "https://github.com/Vulture-API/API-DSM-4-BACKEND/tree/feature/SCRUM-613-back-implementar-endpoints-de-vinculo-entre-usuarios-e-propriedades"
   },
   {
@@ -68,7 +68,7 @@
     "repository": "API-DSM-4-FRONTEND",
     "branch": "feature/SCRUM-614-front-permitir-vincular-propriedades-na-gestao-de-usuarios",
     "base": "origin/dev",
-    "commit": "e9d3379e9452b57a815809311362982ec8e6d621",
+    "commit": "7e11f7905a01f83d12266d52fb36199510b07e6f",
     "url": "https://github.com/Vulture-API/API-DSM-4-FRONTEND/tree/feature/SCRUM-614-front-permitir-vincular-propriedades-na-gestao-de-usuarios"
   },
   {
@@ -95,7 +95,7 @@
     "repository": "API-DSM-4-INFRA",
     "branch": "feature/SCRUM-616-integracao-integrar-vinculos-e-escopo-por-propriedade-com-api",
     "base": "feature/SCRUM-608-db-criar-estrutura-de-vinculo-entre-usuarios-e-propriedades",
-    "commit": "95cf4c5d04e51bd7863c70b13b202690862066b6",
+    "commit": "3562575c3d4b8772edd0d4ab3a1691a1881dd4d9",
     "url": "https://github.com/Vulture-API/API-DSM-4-INFRA/tree/feature/SCRUM-616-integracao-integrar-vinculos-e-escopo-por-propriedade-com-api"
   },
   {
@@ -104,7 +104,7 @@
     "repository": "API-DSM-4-BACKEND",
     "branch": "test/SCRUM-617-teste-back-criar-testes-de-escopo-de-acesso-por-propriedade",
     "base": "feature/SCRUM-613-back-implementar-endpoints-de-vinculo-entre-usuarios-e-propriedades",
-    "commit": "08337d97d13f2c52e36c6efde2b74f156e1d3923",
+    "commit": "c2cccd3833934440acb26ceb0a4562881fd60611",
     "url": "https://github.com/Vulture-API/API-DSM-4-BACKEND/tree/test/SCRUM-617-teste-back-criar-testes-de-escopo-de-acesso-por-propriedade"
   },
   {
