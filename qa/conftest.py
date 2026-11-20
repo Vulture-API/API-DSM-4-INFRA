@@ -65,9 +65,10 @@ class Scenario:
             "INSERT INTO stations(property_id,mac_address,name) SELECT min(id),%s,%s FROM properties RETURNING id",
             (self.mac, f"QA {self.uid}"),
         )
+        self.other_mac = "FB" + self.mac[2:]
         self.other = self.scalar(
             "INSERT INTO stations(property_id,mac_address,name) SELECT min(id),%s,%s FROM properties RETURNING id",
-            ("FB" + self.mac[2:], f"Other {self.uid}"),
+            (self.other_mac, f"Other {self.uid}"),
         )
         self.temp = self.sensor("temp", self.station, 0, 50)
         self.humidity = self.sensor("humidity", self.station)
@@ -152,7 +153,7 @@ class Scenario:
             ).splitlines()[-1]
         )
 
-    def publish_raw(self, payload):
+    def publish_raw(self, payload, mac=None):
         client = mqtt.Client(
             mqtt.CallbackAPIVersion.VERSION2,
             client_id=f"publisher-{uuid.uuid4().hex}",
@@ -161,7 +162,9 @@ class Scenario:
         client.connect("127.0.0.1", int(os.getenv("MQTT_PORT", "1883")))
         client.loop_start()
         try:
-            info = client.publish(f"estacoes/{self.mac}/dados", payload, qos=1)
+            # SCRUM-632: o tópico identifica a mesma estação do payload.
+            topic = f"estacoes/{mac or self.mac}/dados"
+            info = client.publish(topic, payload, qos=1)
             info.wait_for_publish(10)
             assert info.is_published()
         finally:
@@ -175,9 +178,9 @@ class Scenario:
         original.update(values)
         return self.publish_json(json.dumps(original, separators=(",", ":")))
 
-    def publish_json(self, payload):
+    def publish_json(self, payload, mac=None):
         before = self.r.xlen(self.stream)
-        self.publish_raw(payload)
+        self.publish_raw(payload, mac)
         eventually(lambda: self.r.xlen(self.stream) > before)
         return self.r.xrevrange(self.stream, count=1)[0][0]
 
