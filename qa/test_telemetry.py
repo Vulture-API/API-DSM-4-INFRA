@@ -82,7 +82,15 @@ def test_mixed_fields_relations_precision_occurrence_and_query(s):
         (s.humidity, Decimal("23.456789012345678901"), True),
     ]
     assert s.count("occurrences") == 1
-    assert s.count("telemetry_quarantine") == 2
+    # SCRUM-624: campo sem sensor cadastrado na estação é ignorado, sem quarentena.
+    assert s.count("telemetry_quarantine") == 0
+    assert (
+        s.scalar(
+            "SELECT count(*) FROM telemetry_results WHERE destination='ignored' AND event_id IN (SELECT id FROM telemetry_events WHERE stream=%s)",
+            (s.stream,),
+        )
+        == 2
+    )
     assert s.scalar("SELECT count(*) FROM readings WHERE sensor_id=%s", (s.alien,)) == 0
     assert s.scalar(
         "SELECT value FROM occurrences WHERE sensor_id=%s", (s.temp,)
@@ -91,7 +99,9 @@ def test_mixed_fields_relations_precision_occurrence_and_query(s):
         "SELECT original_fields FROM telemetry_events WHERE stream=%s", (s.stream,)
     )
     assert json.loads(bytes(original))["payload"] == raw
-    s.publish_json(f'{{"estacao_id":"{s.other}","unix_time":1760000000,"temp":22}}')
+    s.publish_json(
+        f'{{"estacao_id":"{s.other}","unix_time":1760000000,"temp":22}}', s.other_mac
+    )
     eventually(
         lambda: (
             s.scalar(
@@ -170,7 +180,8 @@ def test_invalid_values_and_unknown_sensors_preserve_valid_neighbor(s, values):
     s.worker()
     s.settled(entry)
     assert s.count("readings") == 1
-    assert s.count("telemetry_quarantine") == 1
+    # SCRUM-624: sensor não cadastrado é ignorado; valor inválido vai à quarentena.
+    assert s.count("telemetry_quarantine") == (0 if "missing" in values else 1)
 
 
 def test_unknown_station_rejection(s):
@@ -290,7 +301,8 @@ def test_quarantine_failure_rolls_back_then_recovers(s):
         f"CREATE TRIGGER {function} BEFORE INSERT ON telemetry_quarantine FOR EACH ROW EXECUTE FUNCTION {function}()"
     )
     try:
-        entry = s.publish({"temp": 60, "missing": 1})
+        # Valor inválido (não sensor ausente, que é ignorado) para forçar quarentena.
+        entry = s.publish({"temp": 60, "humidity": "x"})
         worker = s.worker(PERSIST_CONSUMER="quarantine-fault")
         eventually(lambda: "RaiseError" in s.logs(worker))
         assert (
@@ -315,7 +327,11 @@ def test_quarantine_failure_rolls_back_then_recovers(s):
 
 
 def test_replay_dry_run_and_idempotent_uuid_preserve_accepted(s):
-    entry = s.publish({"temp": 20, "future_sensor": 12})
+    # Sensor ambíguo vai à quarentena (sensor ausente é ignorado desde a SCRUM-624);
+    # corrigido o cadastro, o replay grava só esse campo.
+    keep = s.sensor("dual")
+    duplicate = s.sensor("DUAL")
+    entry = s.publish({"temp": 20, "dual": 12})
     s.worker()
     s.settled(entry)
     qid = s.scalar(
@@ -338,7 +354,8 @@ def test_replay_dry_run_and_idempotent_uuid_preserve_accepted(s):
     original = s.scalar(
         "SELECT original_fields FROM telemetry_events WHERE stream=%s", (s.stream,)
     )
-    new_sensor = s.sensor("future_sensor")
+    s.db.execute("DELETE FROM sensors WHERE id=%s", (duplicate,))
+    new_sensor = keep
     assert s.operation(*command, "--dry-run")["status"] == "DRY_RUN"
     assert (
         s.scalar(
