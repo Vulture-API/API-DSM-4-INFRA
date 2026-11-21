@@ -1,8 +1,12 @@
 # Valida os commits fixados com PostgreSQL descartável, sem acessar o banco externo.
+# No push da main, E2E e suítes verdes disparam o deploy de produção
+# (deploy-aws.yml do API-DSM-4-DEPLOY) com o commit exato que foi testado.
 name: E2E
 
 on:
   pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
   schedule:
     - cron: "0 10 * * 1-5" # 07h em Brasília, dias úteis
@@ -10,9 +14,11 @@ on:
 permissions:
   contents: read
 
+# Só PR cancela execução antiga: na main, cada merge precisa terminar para
+# poder ser publicado (e o agendado não derruba um push em andamento).
 concurrency:
-  group: e2e-${{ github.ref }}
-  cancel-in-progress: true
+  group: e2e-${{ github.event_name }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   e2e:
@@ -25,17 +31,20 @@ jobs:
       JWT_SECRET: vulture-qa-${{ github.run_id }}-${{ github.run_attempt }}-jwt-secret-descartavel
       FRONTEND_URL: http://localhost:8080
     name: Ambiente completo + E2E
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
+          persist-credentials: false
 
       - name: Versões testadas
-        run: git submodule foreach --quiet 'echo "$name $(git rev-parse --short HEAD)"'
+        run: |
+          # shellcheck disable=SC2016 # $name e o subshell sao expandidos pelo foreach
+          git submodule foreach --quiet 'echo "$name $(git rev-parse --short HEAD)"'
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
 
@@ -43,6 +52,13 @@ jobs:
         run: |
           node --test scripts/simulador.test.mjs
           docker compose --env-file /dev/null config --quiet
+          # O banco de teste monta as migrations uma a uma: tem que bater com o manifesto do BANCO.
+          MANIFEST=services/API-DSM-4-BANCO/migrations/manifest.txt
+          if [ -f "$MANIFEST" ]; then
+            diff <(grep -Ev '^[[:space:]]*(#|$)' "$MANIFEST") \
+              <(grep -oE 'migrations/[0-9]{3}_[a-z0-9_]+\.sql' docker-compose.test.yml | sed -E 's|migrations/||; s|\.sql$||') \
+              || { echo "::error file=docker-compose.test.yml::Migrations montadas diferem de $MANIFEST."; exit 1; }
+          fi
 
       - name: Subir ambiente
         run: docker compose --env-file /dev/null up -d --build --wait --wait-timeout 180
@@ -50,7 +66,7 @@ jobs:
       - name: Teste ponta a ponta
         run: node scripts/e2e.mjs
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: QA da telemetria
@@ -64,11 +80,12 @@ jobs:
       - name: Evidências
         if: always()
         run: python scripts/evidence.py
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: ambiente-e2e
           path: reports/
+          retention-days: 30
 
       - name: Derrubar
         if: always()
@@ -78,19 +95,69 @@ jobs:
 
   components:
     name: Suítes fixadas de recepção, tratamento e BANCO
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
-      - uses: actions/setup-python@v5
+          persist-credentials: false
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Componentes, cobertura e migrations
         run: python scripts/check-components.py
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: componentes-fixados
           path: reports/components/
+          retention-days: 30
+
+  disparar-deploy:
+    name: Disparar deploy em produção
+    needs: [e2e, components]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Acionar deploy-aws.yml no API-DSM-4-DEPLOY
+        env:
+          # PAT fine-grained (ou GitHub App) só no repo DEPLOY, Actions: write.
+          GH_TOKEN: ${{ secrets.DEPLOY_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::Secret DEPLOY_DISPATCH_TOKEN não configurado: o commit ${GITHUB_SHA::7} passou no E2E mas não foi publicado."
+            exit 1
+          fi
+          gh workflow run deploy-aws.yml --repo Vulture-API/API-DSM-4-DEPLOY --ref main -f infra_sha="$GITHUB_SHA"
+          {
+            echo "### Deploy solicitado"
+            echo "INFRA \`${GITHUB_SHA::7}\` enviado ao [API-DSM-4-DEPLOY](https://github.com/Vulture-API/API-DSM-4-DEPLOY/actions/workflows/deploy-aws.yml)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  alerta-agendado:
+    name: Avisar falha do E2E agendado
+    needs: [e2e, components]
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Abrir ou comentar issue de falha
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const title = 'E2E agendado falhou';
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = `A execução agendada do E2E falhou em ${new Date().toISOString().slice(0, 10)}: ${run}\n\nAlgum merge na \`dev\` de um serviço pode ter quebrado a integração.`;
+            const abertas = await github.paginate(github.rest.issues.listForRepo, {
+              ...context.repo, state: 'open', per_page: 100,
+            });
+            const existente = abertas.find((i) => !i.pull_request && i.title === title);
+            if (existente) {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: existente.number, body });
+            } else {
+              await github.rest.issues.create({ ...context.repo, title, body });
+            }
