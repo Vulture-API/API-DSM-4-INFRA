@@ -29,7 +29,7 @@ services:
       - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/migrations/022_user_properties.sql:/docker-entrypoint-initdb.d/10-022_user_properties.sql:ro
       - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/migrations/023_telemetry_ignored_fields.sql:/docker-entrypoint-initdb.d/11-023_telemetry_ignored_fields.sql:ro
       - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/migrations/024_sensor_type_limits.sql:/docker-entrypoint-initdb.d/12-024_sensor_type_limits.sql:ro
-      - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/setup/seed-dev.sql:/docker-entrypoint-initdb.d/12-seed-dev.sql:ro
+      - ${SERVICES_DIR:-./services}/API-DSM-4-BANCO/setup/seed-dev.sql:/docker-entrypoint-initdb.d/13-seed-dev.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d agritech_test"]
       interval: 3s
