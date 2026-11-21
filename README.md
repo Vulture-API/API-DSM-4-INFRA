@@ -147,10 +147,16 @@ semântica e não se declara que todas as consultas filtram inconsistentes.
 O check **Ambiente completo + E2E** preserva a regressão do produto e executa a QA
 ampliada. Um segundo job executa os testes dos gitlinks de recepção e tratamento
 com lint, pacote e cobertura >=80% por componente, e os testes do BANCO, benchmark
-com 100 mil leituras, particionamento e reaplicação das migrations 016/017/018.
+com 100 mil leituras, particionamento e reaplicação (duas vezes) das migrations de `migrations/manifest.txt` do BANCO.
 Integrações não podem passar com skips. Os runners de verificação incluem os testes,
 sem herdar sua exclusão do `.dockerignore` de produção. As imagens de produção
 continuam usando os Dockerfiles originais sem root.
+
+**Deploy:** no push da `main` o E2E também roda e, com os dois jobs verdes, o job
+**Disparar deploy em produção** chama o `deploy-aws.yml` do
+[API-DSM-4-DEPLOY](https://github.com/Vulture-API/API-DSM-4-DEPLOY) com o SHA testado
+(secret `DEPLOY_DISPATCH_TOKEN`). Falha do E2E agendado abre/comenta a issue
+"E2E agendado falhou". O trunk deste repositório é a `main` (a `dev` não é usada).
 
 JUnit, cobertura, pacotes, logs por cenário, inventário de imagens/volumes e SHAs
 ficam em `reports/` (fora do Git) e nos artefatos do Actions. Os scripts de Bash e
